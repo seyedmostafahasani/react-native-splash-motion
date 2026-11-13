@@ -9,7 +9,9 @@ import {
 } from '../core';
 import type { ResolvedOptions } from '../core';
 import {
+  listFirstInIos,
   makeAndroidProject,
+  makeIosExtension,
   makeIosProject,
   makeLottie,
   makePng,
@@ -192,6 +194,48 @@ describe('generateIos', () => {
     generateIos(root, options());
     expect(fs.existsSync(path.join(appDir, 'CustomLaunch.storyboard'))).toBe(
       true
+    );
+  });
+
+  it.each([
+    ['without', false],
+    ['with', true],
+  ])(
+    'skips an app extension %s an asset catalog listed before the app',
+    (_, xcassets) => {
+      const appDir = makeIosProject(root);
+      const widgetDir = makeIosExtension(root, 'MyWidget', { xcassets });
+      const widgetFiles = fs.readdirSync(widgetDir);
+      listFirstInIos(root, 'MyWidget');
+      generateIos(root, options());
+      expect(fs.existsSync(path.join(appDir, 'LaunchScreen.storyboard'))).toBe(
+        true
+      );
+      expect(
+        fs.existsSync(
+          path.join(appDir, 'Images.xcassets', 'SplashMotionConfig.dataset')
+        )
+      ).toBe(true);
+      expect(fs.readdirSync(widgetDir)).toEqual(widgetFiles);
+      if (xcassets) {
+        expect(fs.readdirSync(path.join(widgetDir, 'Assets.xcassets'))).toEqual(
+          []
+        );
+      }
+    }
+  );
+
+  it('checks the folder named after the Xcode project first', () => {
+    const appDir = makeIosProject(root);
+    fs.mkdirSync(path.join(root, 'ios', 'MyApp.xcodeproj'));
+    const otherDir = makeIosProject(root, { appDir: 'OtherApp' });
+    listFirstInIos(root, 'OtherApp');
+    generateIos(root, options());
+    expect(fs.existsSync(path.join(appDir, 'LaunchScreen.storyboard'))).toBe(
+      true
+    );
+    expect(fs.existsSync(path.join(otherDir, 'LaunchScreen.storyboard'))).toBe(
+      false
     );
   });
 

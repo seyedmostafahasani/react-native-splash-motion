@@ -493,16 +493,31 @@ function runtimeConfig(o: ResolvedOptions, file: string) {
 // ---------------------------------------------------------------------------
 // iOS
 
+/**
+ * Finds the app's folder in ios/. App extensions (widgets, share extensions…)
+ * have their own folder with an Info.plist too, so check the folder named after
+ * the Xcode project first and skip any Info.plist that declares an extension.
+ */
 export function findIosApp(projectRoot: string) {
   const iosDir = path.join(projectRoot, 'ios');
   if (!fs.existsSync(iosDir)) return null;
-  for (const entry of fs.readdirSync(iosDir)) {
+  const entries = fs.readdirSync(iosDir);
+  const projectName = entries
+    .find((entry) => entry.endsWith('.xcodeproj'))
+    ?.replace(/\.xcodeproj$/, '');
+  const ordered =
+    projectName && entries.includes(projectName)
+      ? [projectName, ...entries.filter((entry) => entry !== projectName)]
+      : entries;
+  for (const entry of ordered) {
     if (entry === 'Pods' || entry === 'build' || entry.endsWith('Tests'))
       continue;
     const dir = path.join(iosDir, entry);
     const plist = path.join(dir, 'Info.plist');
     if (!fs.statSync(dir).isDirectory() || !fs.existsSync(plist)) continue;
     const content = fs.readFileSync(plist, 'utf8');
+    if (/<key>(NSExtension|EXAppExtensionAttributes)<\/key>/.test(content))
+      continue;
     const match = content.match(
       /<key>UILaunchStoryboardName<\/key>\s*<string>([^<]+)<\/string>/
     );
