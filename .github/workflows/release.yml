@@ -76,15 +76,17 @@ jobs:
             });
           "
 
+      # Trusted publishing (OIDC) needs npm 11.5.1 or newer.
+      - name: Install a recent npm
+        run: npm install -g npm@latest
+
+      # Authenticates through npm trusted publishing (OIDC): no token needed.
       - name: Publish to npm
         run: |
           tag=latest
           # Pre-releases (e.g. 0.2.0-beta.1) must not become the default install.
           case "$GITHUB_REF_NAME" in *-*) tag=next ;; esac
           npm publish --provenance --access public --tag "$tag"
-        env:
-          # Not needed if the package uses npm trusted publishing (OIDC).
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create the GitHub release
         run: |
