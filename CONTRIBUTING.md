@@ -112,14 +112,20 @@ When you're sending a pull request:
 
 ### Releasing
 
-Maintainers publish from CI; nothing is published from a laptop.
+Maintainers publish manually from their own machine; CI does not publish.
 
-1. Bump `version` in `package.json` and merge it to `main` (for example `chore: release 0.1.3`).
-2. Tag that commit and push the tag:
+1. Make sure `main` is green: `yarn lint && yarn typecheck && yarn test`.
+2. Bump `version` in `package.json` and merge it to `main` (for example `chore: release 0.1.3`).
+3. Log in to npm if needed (`npm whoami` should print your username), then publish from the repo root:
+
+   ```sh
+   npm publish --access public
+   ```
+
+   Pre-releases (for example `0.2.0-beta.1`) must use a non-default tag: `npm publish --access public --tag next`.
+4. Tag the released commit and push the tag:
 
    ```sh
    git tag v0.1.3
    git push origin v0.1.3
    ```
-
-The `Release` workflow checks that the tag matches `package.json` and is on `main`, runs lint, typecheck and tests, builds, verifies the package contents, then publishes to npm with provenance and creates the GitHub release. Tags containing a `-` (such as `v0.2.0-beta.1`) are published under the `next` dist-tag and marked as pre-releases. The workflow needs an `NPM_TOKEN` repository secret, unless the package is set up for npm trusted publishing.
