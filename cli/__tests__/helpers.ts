@@ -8,6 +8,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import zlib from 'zlib';
+import { vi } from 'vitest';
 
 const tempDirs: string[] = [];
 
@@ -204,6 +205,48 @@ export function makeIosProject(
     fs.mkdirSync(path.join(dir, 'Images.xcassets'), { recursive: true });
   }
   return dir;
+}
+
+/** An app extension (a widget, a share extension…) next to the app's folder. */
+export function makeIosExtension(
+  root: string,
+  name = 'MyWidget',
+  { xcassets = false }: { xcassets?: boolean } = {}
+): string {
+  const dir = path.join(root, 'ios', name);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'Info.plist'),
+    `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+    <key>NSExtension</key>
+    <dict>
+        <key>NSExtensionPointIdentifier</key>
+        <string>com.apple.widgetkit-extension</string>
+    </dict>
+</dict>
+</plist>
+`
+  );
+  if (xcassets) {
+    fs.mkdirSync(path.join(dir, 'Assets.xcassets'), { recursive: true });
+  }
+  return dir;
+}
+
+/**
+ * Makes `fs.readdirSync(<root>/ios)` list `first` first. The order of
+ * `readdirSync` depends on the file system, so tests that care pin it.
+ */
+export function listFirstInIos(root: string, first: string) {
+  const iosDir = path.join(root, 'ios');
+  const readdirSync = fs.readdirSync as (...args: unknown[]) => unknown;
+  vi.spyOn(fs, 'readdirSync').mockImplementation(((...args: unknown[]) => {
+    const entries = readdirSync(...args);
+    if (String(args[0]) !== iosDir || !Array.isArray(entries)) return entries;
+    return [first, ...entries.filter((entry) => entry !== first)];
+  }) as typeof fs.readdirSync);
 }
 
 export function makeAndroidProject(

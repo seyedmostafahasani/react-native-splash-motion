@@ -9,7 +9,9 @@ import {
 } from '../core';
 import { runDoctor, xmlProblem } from '../doctor';
 import {
+  listFirstInIos,
   makeAndroidProject,
+  makeIosExtension,
   makeIosProject,
   makeLottie,
   removeTempDirs,
@@ -68,6 +70,13 @@ describe('doctor', () => {
     setupGeneratedProject();
     const report = runDoctor(root);
     expect(report).toEqual({ errors: 0, warnings: 0 });
+  });
+
+  it('checks the app, not an app extension listed before it', () => {
+    makeIosExtension(root, 'MyWidget');
+    listFirstInIos(root, 'MyWidget');
+    setupGeneratedProject();
+    expect(runDoctor(root)).toEqual({ errors: 0, warnings: 0 });
   });
 
   it('fails on an empty directory', () => {
