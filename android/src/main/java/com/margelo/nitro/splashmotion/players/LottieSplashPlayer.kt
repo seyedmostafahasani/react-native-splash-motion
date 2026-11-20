@@ -179,12 +179,9 @@ internal class LottieSplashPlayer(context: Context, private val render: Handler)
     lottie.repeatCount = if (config.loop) LottieDrawable.INFINITE else 0
   }
 
-  private var started = false
-
-  // Once: both the system splash exit and a late first frame can call it.
+  // The controller calls it once.
   override fun play() {
-    if (lottie.composition == null || started) return
-    started = true
+    if (lottie.composition == null) return
     val intro = intro() ?: return lottie.playAnimation()
     // A cut-off intro (play() or hide() took over) does not start the loop.
     playMarker(intro, loop = false) { finished ->
@@ -236,15 +233,16 @@ internal class LottieSplashPlayer(context: Context, private val render: Handler)
   override fun fade(durationMs: Long, onEnd: () -> Unit) {
     // Android 10+: the compositor fades the surface, so nothing redraws. While
     // the app draws its first heavy frame, a redraw can wait 100 ms for a buffer.
-    val control = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) surfaceView.surfaceControl else null
+    // Below that, or without a valid surface control, the next draw fades.
     // One transaction for the whole fade: apply() sends and clears it.
     val transaction = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) SurfaceControl.Transaction() else null
     val setAlpha = { value: Float ->
-      if (control != null && transaction != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        if (control.isValid) transaction.setAlpha(control, value).apply()
+      val control = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) surfaceView.surfaceControl else null
+      if (transaction != null && control != null && control.isValid && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        transaction.setAlpha(control, value).apply()
       } else {
         alpha = value
-        draw()
+        requestDraw()
       }
     }
     val end = {

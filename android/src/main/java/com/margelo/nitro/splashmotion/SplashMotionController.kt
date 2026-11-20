@@ -100,7 +100,7 @@ internal object SplashMotionController {
     splash.setOnExitAnimationListener {
       it.remove()
       splashGone = true
-      render.post { player?.play() }
+      render.post { player?.let { start(it) } }
     }
 
     // Runs right after onCreate(), once React Native has set its content view.
@@ -146,7 +146,7 @@ internal object SplashMotionController {
       player.load(bytes, config, background, density) {
         overlayReady = true
         // The system splash left early (the safety net): start now.
-        main.post { if (splashGone) render.post { player.play() } }
+        main.post { if (splashGone) render.post { start(player) } }
       }
     }
   }
@@ -173,9 +173,19 @@ internal object SplashMotionController {
 
   // region Steps
 
-  // play() and hide() steps run one after another, in call order.
+  // play() and hide() steps run one after another, in call order, and only
+  // after the animation has started: a step never races the start.
   private val steps = ArrayDeque<(done: () -> Unit) -> Unit>()
   private var stepRunning = false
+  private var started = false
+
+  /** Starts the animation (once) when the system splash is gone, then the steps. */
+  private fun start(player: SplashPlayer) {
+    if (started) return
+    started = true
+    player.play()
+    runNextStep()
+  }
 
   private fun enqueue(step: (done: () -> Unit) -> Unit) {
     steps.addLast(step)
@@ -183,7 +193,7 @@ internal object SplashMotionController {
   }
 
   private fun runNextStep() {
-    if (stepRunning) return
+    if (stepRunning || !started) return
     val step = steps.removeFirstOrNull() ?: return
     stepRunning = true
     step {
@@ -208,11 +218,16 @@ internal object SplashMotionController {
   fun play(marker: String, waitForLoop: Boolean, loop: Boolean, done: (Boolean) -> Unit) {
     render.post {
       val player = this.player
-      if (hiding || player == null || !player.hasMarker(marker)) {
+      if (hiding || player == null) {
         done(false)
         return@post
       }
       enqueue { next ->
+        // Checked here: the animation is loaded once the steps run.
+        if (!player.hasMarker(marker)) {
+          done(false)
+          return@enqueue next()
+        }
         afterCurrentLoop(waitForLoop, player) {
           player.playMarker(marker, loop) { finished -> if (!loop) done(finished) }
           if (loop) done(true)
