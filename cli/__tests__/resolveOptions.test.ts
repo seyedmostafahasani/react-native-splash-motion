@@ -98,9 +98,18 @@ describe('resolveOptions — input validation', () => {
   });
 
   it('passes through loop options', () => {
-    const o = generate(makeLottie(), { loop: false, loopMarker: 'loop' });
+    const o = generate(makeLottie(), {
+      loop: false,
+      loopMarker: 'loop',
+      introMarker: 'intro',
+    });
     expect(o.loop).toBe(false);
     expect(o.loopMarker).toBe('loop');
+    expect(o.introMarker).toBe('intro');
+  });
+
+  it('has no intro marker by default', () => {
+    expect(generate(makeLottie()).introMarker).toBeNull();
   });
 });
 

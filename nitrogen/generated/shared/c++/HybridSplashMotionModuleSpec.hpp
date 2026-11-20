@@ -15,9 +15,13 @@
 
 // Forward declaration of `HideConfig` to properly resolve imports.
 namespace margelo::nitro::splashmotion { struct HideConfig; }
+// Forward declaration of `PlayConfig` to properly resolve imports.
+namespace margelo::nitro::splashmotion { struct PlayConfig; }
 
 #include <NitroModules/Promise.hpp>
 #include "HideConfig.hpp"
+#include <string>
+#include "PlayConfig.hpp"
 
 namespace margelo::nitro::splashmotion {
 
@@ -51,6 +55,7 @@ namespace margelo::nitro::splashmotion {
     public:
       // Methods
       virtual std::shared_ptr<Promise<void>> hide(const HideConfig& config) = 0;
+      virtual std::shared_ptr<Promise<bool>> play(const std::string& marker, const PlayConfig& config) = 0;
       virtual bool isVisible() = 0;
 
     protected:

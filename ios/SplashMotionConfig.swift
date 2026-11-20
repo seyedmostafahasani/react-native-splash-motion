@@ -8,6 +8,7 @@ struct SplashMotionConfig: Decodable {
   let background: String
   let loop: Bool?
   let loopMarker: String?
+  let introMarker: String?
 
   static func load() -> SplashMotionConfig? {
     guard let asset = NSDataAsset(name: "SplashMotionConfig") else { return nil }

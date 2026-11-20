@@ -19,6 +19,7 @@ const HELP = `
     --still <png>             Your animation's first frame, shown by the system
                               launch screen (iOS + Android) before the app starts
     --loop-marker <name>      Only loop this marker's range
+    --intro-marker <name>     Play this marker once before the loop starts
     --no-loop                 Play once and hold the last frame
     --keep-background         Keep a full-canvas background solid in the
                               animation (removed by default)

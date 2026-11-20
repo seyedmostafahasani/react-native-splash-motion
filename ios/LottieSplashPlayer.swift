@@ -32,10 +32,35 @@ final class LottieSplashPlayer: SplashPlayer {
     return (start, start + duration)
   }
 
+  /// The last frame of what is playing now (intro, loop or a marker).
+  private var segmentEnd: AnimationFrameTime = 0
+
+  /// Counts plays, so a late completion cannot act after a newer play started.
+  private var playCount = 0
+  /// `playCount` of the intro: only while it is the latest play does the loop start.
+  private var introPlay = -1
+
   func play() {
+    if let marker = config.introMarker, range(of: marker) != nil {
+      // A cut-off intro (play() or hide() took over) does not start the loop.
+      // The count also covers a completion that Core Animation delivers after
+      // the next marker has already started.
+      _ = playMarker(marker, loop: false) { [weak self] finished in
+        guard let self, finished, self.playCount == self.introPlay else { return }
+        self.playLoop()
+      }
+      introPlay = playCount
+    } else {
+      playLoop()
+    }
+  }
+
+  private func playLoop() {
     if let marker = config.loopMarker, let loop = range(of: marker) {
+      segmentEnd = loop.end
       animationView.play(fromFrame: loop.start, toFrame: loop.end, loopMode: .loop)
     } else {
+      segmentEnd = animation.endFrame
       animationView.loopMode = (config.loop ?? true) ? .loop : .playOnce
       animationView.play()
     }
@@ -43,16 +68,25 @@ final class LottieSplashPlayer: SplashPlayer {
 
   func remainingLoopTime() -> TimeInterval {
     guard animationView.isAnimationPlaying else { return 0 }
-    let end = config.loopMarker.flatMap { range(of: $0)?.end } ?? animation.endFrame
-    let framesLeft = max(0, Double(end - animationView.realtimeAnimationFrame))
+    let framesLeft = max(0, Double(segmentEnd - animationView.realtimeAnimationFrame))
     let speed = max(0.01, Double(abs(animationView.animationSpeed)))
     return framesLeft / animation.framerate / speed
   }
 
-  func playOutro(_ name: String, completion: @escaping () -> Void) -> Bool {
-    guard let outro = range(of: name) else { return false }
-    animationView.play(fromFrame: outro.start, toFrame: outro.end, loopMode: .playOnce) { _ in
-      completion()
+  func hasMarker(_ name: String) -> Bool {
+    range(of: name) != nil
+  }
+
+  func playMarker(_ name: String, loop: Bool, completion: @escaping (Bool) -> Void) -> Bool {
+    guard let marker = range(of: name) else { return false }
+    playCount += 1
+    segmentEnd = marker.end
+    animationView.play(
+      fromFrame: marker.start,
+      toFrame: marker.end,
+      loopMode: loop ? .loop : .playOnce
+    ) { finished in
+      completion(finished)
     }
     return true
   }

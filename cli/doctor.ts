@@ -28,6 +28,7 @@ interface Reporter {
 interface RuntimeConfig {
   background?: string;
   loopMarker?: string | null;
+  introMarker?: string | null;
 }
 
 interface Animation {
@@ -97,16 +98,20 @@ function checkGeneratedAssets(
   const markers = (animation.markers ?? [])
     .map((m) => m?.cm)
     .filter((m): m is string => Boolean(m));
-  if (config.loopMarker) {
-    if (markers.includes(config.loopMarker)) {
-      r.ok(`${platform}: loop marker "${config.loopMarker}" exists`);
+  for (const [kind, marker] of [
+    ['loop', config.loopMarker],
+    ['intro', config.introMarker],
+  ] as const) {
+    if (!marker) continue;
+    if (markers.includes(marker)) {
+      r.ok(`${platform}: ${kind} marker "${marker}" exists`);
     } else {
       r.fail(
-        `${platform}: loop marker "${config.loopMarker}" is not in the animation` +
+        `${platform}: ${kind} marker "${marker}" is not in the animation` +
           (markers.length
             ? ` (available: ${markers.join(', ')}).`
             : ' (the animation has no markers).') +
-          ' Fix --loop-marker or add the marker in After Effects.'
+          ` Fix --${kind}-marker or add the marker in After Effects.`
       );
     }
   }
@@ -365,7 +370,7 @@ export function runDoctor(projectRoot: string): DoctorReport {
   if (hasAndroid) checkAndroid(projectRoot, r);
 
   r.info(
-    "Marker checks cover loopMarker only; hide({ outro: 'name' }) is a runtime option and is not validated here."
+    "Marker checks cover loopMarker and introMarker only; play('name') and hide({ outro: 'name' }) are runtime options and are not validated here."
   );
   console.log(`\n  ${report.errors} error(s), ${report.warnings} warning(s)\n`);
   if (report.errors === 0 && report.warnings === 0) {

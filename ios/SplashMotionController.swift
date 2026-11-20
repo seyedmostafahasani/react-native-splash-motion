@@ -75,6 +75,62 @@ final class SplashMotionController {
     return true
   }
 
+  // MARK: Steps
+
+  /// `play()` and `hide()` steps run one after another, in call order.
+  private var steps: [(@escaping () -> Void) -> Void] = []
+  private var stepRunning = false
+
+  private func enqueue(_ step: @escaping (@escaping () -> Void) -> Void) {
+    steps.append(step)
+    runNextStep()
+  }
+
+  private func runNextStep() {
+    guard !stepRunning, !steps.isEmpty else { return }
+    stepRunning = true
+    let step = steps.removeFirst()
+    step { [weak self] in
+      self?.stepRunning = false
+      self?.runNextStep()
+    }
+  }
+
+  /// Runs `body` once the current loop or marker ends (at most 5 s), or now.
+  private func afterCurrentLoop(_ waitForLoop: Bool, _ player: SplashPlayer, _ body: @escaping () -> Void) {
+    if waitForLoop {
+      let wait = min(player.remainingLoopTime(), 5)
+      DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: body)
+    } else {
+      body()
+    }
+  }
+
+  // MARK: Playing a marker
+
+  func play(
+    marker: String,
+    waitForLoop: Bool,
+    loop: Bool,
+    completion: @escaping (Bool) -> Void
+  ) {
+    DispatchQueue.main.async {
+      guard !self.hiding, let player = self.player, player.hasMarker(marker) else {
+        completion(false)
+        return
+      }
+      self.enqueue { done in
+        self.afterCurrentLoop(waitForLoop, player) {
+          _ = player.playMarker(marker, loop: loop) { finished in
+            if !loop { completion(finished) }
+          }
+          if loop { completion(true) }
+          done()
+        }
+      }
+    }
+  }
+
   // MARK: Hiding
 
   func hide(
@@ -93,10 +149,13 @@ final class SplashMotionController {
       if self.hiding { return }
       self.hiding = true
 
-      let elapsed = Date().timeIntervalSince(self.shownAt) * 1000
-      let delay = max(0, minDuration - elapsed) / 1000
-      DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-        self.runExit(fade: fade, waitForLoop: waitForLoop, outro: outro)
+      // The last step: it ends with the overlay, so it never calls `done`.
+      self.enqueue { _ in
+        let elapsed = Date().timeIntervalSince(self.shownAt) * 1000
+        let delay = max(0, minDuration - elapsed) / 1000
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+          self.runExit(fade: fade, waitForLoop: waitForLoop, outro: outro)
+        }
       }
     }
   }
@@ -106,21 +165,15 @@ final class SplashMotionController {
       dismiss(fade: fade)
       return
     }
-    let afterLoop = { [weak self] in
+    afterCurrentLoop(waitForLoop, player) { [weak self] in
       guard let self else { return }
       if let outro,
-         player.playOutro(outro, completion: { [weak self] in
+         player.playMarker(outro, loop: false, completion: { [weak self] _ in
            self?.dismiss(fade: fade)
          }) {
         return
       }
       self.dismiss(fade: fade)
-    }
-    if waitForLoop {
-      let wait = min(player.remainingLoopTime(), 5)
-      DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: afterLoop)
-    } else {
-      afterLoop()
     }
   }
 
@@ -152,6 +205,8 @@ final class SplashMotionController {
   private func flush() {
     let callbacks = pending
     pending.removeAll()
+    steps.removeAll()
+    stepRunning = false
     hiding = false
     callbacks.forEach { $0() }
   }

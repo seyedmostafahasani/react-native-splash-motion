@@ -92,13 +92,18 @@ internal object SplashMotionController {
     splash.setOnExitAnimationListener {
       it.remove()
       splashGone = true
-      player?.play()
+      player?.let { start(it) }
     }
 
     // Runs right after onCreate(), once React Native has set its content view.
     main.post { attachOverlay(activity, config) }
-    // Safety net: never block the launch if the animation fails to load.
-    main.postDelayed({ overlayReady = true }, 1500)
+    // Safety net: never block the launch if the animation fails to load, and
+    // start the steps even if the exit listener never runs (its Activity was
+    // recreated while the system splash showed).
+    main.postDelayed({
+      overlayReady = true
+      player?.let { start(it) }
+    }, 1500)
   }
 
   private fun attachOverlay(activity: Activity, config: SplashConfig) {
@@ -132,7 +137,7 @@ internal object SplashMotionController {
     this.player = player
     player.load(bytes, config) {
       overlayReady = true
-      if (splashGone) player.play()
+      if (splashGone) start(player)
     }
   }
 
@@ -156,6 +161,74 @@ internal object SplashMotionController {
 
   // endregion
 
+  // region Steps
+
+  // play() and hide() steps run one after another, in call order, and only
+  // after the animation has started: a step never races the start.
+  private val steps = ArrayDeque<(done: () -> Unit) -> Unit>()
+  private var stepRunning = false
+  private var started = false
+
+  /** Starts the animation (once) when the system splash is gone, then the steps. */
+  private fun start(player: SplashPlayer) {
+    if (started) return
+    started = true
+    player.play()
+    runNextStep()
+  }
+
+  private fun enqueue(step: (done: () -> Unit) -> Unit) {
+    steps.addLast(step)
+    runNextStep()
+  }
+
+  private fun runNextStep() {
+    if (stepRunning || !started) return
+    val step = steps.removeFirstOrNull() ?: return
+    stepRunning = true
+    step {
+      stepRunning = false
+      runNextStep()
+    }
+  }
+
+  /** Runs `body` once the current loop or marker ends (at most 5 s), or now. */
+  private fun afterCurrentLoop(waitForLoop: Boolean, player: SplashPlayer, body: () -> Unit) {
+    if (waitForLoop) {
+      main.postDelayed({ body() }, player.remainingLoopMs().coerceIn(0, 5_000))
+    } else {
+      body()
+    }
+  }
+
+  // endregion
+
+  // region Playing a marker
+
+  fun play(marker: String, waitForLoop: Boolean, loop: Boolean, done: (Boolean) -> Unit) {
+    main.post {
+      val player = this.player
+      if (hiding || player == null) {
+        done(false)
+        return@post
+      }
+      enqueue { next ->
+        // Checked here: the animation is loaded once the steps run.
+        if (!player.hasMarker(marker)) {
+          done(false)
+          return@enqueue next()
+        }
+        afterCurrentLoop(waitForLoop, player) {
+          player.playMarker(marker, loop) { finished -> if (!loop) done(finished) }
+          if (loop) done(true)
+          next()
+        }
+      }
+    }
+  }
+
+  // endregion
+
   // region Hiding
 
   fun hide(
@@ -175,24 +248,22 @@ internal object SplashMotionController {
       if (hiding) return@post
       hiding = true
 
-      val elapsed = SystemClock.uptimeMillis() - shownAt
-      main.postDelayed(
-        { runExit(fade, waitForLoop, outro) },
-        (minDuration - elapsed).coerceAtLeast(0),
-      )
+      // The last step: it ends with the overlay, so it never calls `next`.
+      enqueue {
+        val elapsed = SystemClock.uptimeMillis() - shownAt
+        main.postDelayed(
+          { runExit(fade, waitForLoop, outro) },
+          (minDuration - elapsed).coerceAtLeast(0),
+        )
+      }
     }
   }
 
   private fun runExit(fade: Long, waitForLoop: Boolean, outro: String?) {
     val player = this.player ?: return dismiss(fade)
-    val afterLoop = Runnable {
-      val playing = outro != null && player.playOutro(outro) { dismiss(fade) }
+    afterCurrentLoop(waitForLoop, player) {
+      val playing = outro != null && player.playMarker(outro, loop = false) { dismiss(fade) }
       if (!playing) dismiss(fade)
-    }
-    if (waitForLoop) {
-      main.postDelayed(afterLoop, player.remainingLoopMs().coerceIn(0, 5_000))
-    } else {
-      afterLoop.run()
     }
   }
 
@@ -219,6 +290,8 @@ internal object SplashMotionController {
   private fun flush() {
     val callbacks = pending.toList()
     pending.clear()
+    steps.clear()
+    stepRunning = false
     hiding = false
     callbacks.forEach { it() }
   }

@@ -15,6 +15,18 @@ class HybridSplashMotion: HybridSplashMotionModuleSpec {
     return promise
   }
 
+  func play(marker: String, config: PlayConfig) throws -> Promise<Bool> {
+    let promise = Promise<Bool>()
+    SplashMotionController.shared.play(
+      marker: marker,
+      waitForLoop: config.waitForLoop ?? true,
+      loop: config.loop ?? false
+    ) { played in
+      promise.resolve(withResult: played)
+    }
+    return promise
+  }
+
   func isVisible() throws -> Bool {
     SplashMotionController.shared.isVisible
   }

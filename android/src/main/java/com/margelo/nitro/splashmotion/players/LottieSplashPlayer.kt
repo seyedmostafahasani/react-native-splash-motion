@@ -34,17 +34,35 @@ internal class LottieSplashPlayer(context: Context) : SplashPlayer {
       return onReady()
     }
     lottie.setComposition(composition)
-    config.loopMarker?.let { marker ->
-      if (composition.getMarker(marker) != null) lottie.setMinAndMaxFrame(marker)
-    }
-    lottie.repeatCount = if (config.loop) LottieDrawable.INFINITE else 0
+    this.config = config
+    applyLoop()
+    intro()?.let { lottie.setMinAndMaxFrame(it) }
     // Hold the first frame (it matches the launch-screen still) until play().
     lottie.frame = lottie.minFrame.toInt()
     onReady()
   }
 
+  private var config: SplashConfig? = null
+
+  private fun intro(): String? = config?.introMarker?.takeIf { hasMarker(it) }
+
+  private fun applyLoop() {
+    val config = config ?: return
+    val marker = config.loopMarker?.takeIf { hasMarker(it) }
+    if (marker != null) lottie.setMinAndMaxFrame(marker) else lottie.setMinAndMaxProgress(0f, 1f)
+    lottie.repeatCount = if (config.loop) LottieDrawable.INFINITE else 0
+  }
+
   override fun play() {
-    if (lottie.composition != null && !lottie.isAnimating) lottie.playAnimation()
+    if (lottie.composition == null || lottie.isAnimating) return
+    val intro = intro() ?: return lottie.playAnimation()
+    // A cut-off intro (play() or hide() took over) does not start the loop.
+    playMarker(intro, loop = false) { finished ->
+      if (finished) {
+        applyLoop()
+        lottie.playAnimation()
+      }
+    }
   }
 
   override fun remainingLoopMs(): Long {
@@ -55,27 +73,39 @@ internal class LottieSplashPlayer(context: Context) : SplashPlayer {
     return (framesLeft / composition.frameRate * 1000f / speed).toLong()
   }
 
-  override fun playOutro(name: String, onEnd: () -> Unit): Boolean {
-    val composition = lottie.composition ?: return false
-    composition.getMarker(name) ?: return false
+  override fun hasMarker(name: String): Boolean = lottie.composition?.getMarker(name) != null
 
+  /** Reports the marker that is playing now as cut off; set while one plays. */
+  private var interrupt: (() -> Unit)? = null
+
+  override fun playMarker(name: String, loop: Boolean, onEnd: (Boolean) -> Unit): Boolean {
+    if (!hasMarker(name)) return false
+
+    interrupt?.invoke()
     lottie.removeAllAnimatorListeners()
-    lottie.repeatCount = 0
+    lottie.repeatCount = if (loop) LottieDrawable.INFINITE else 0
     lottie.setMinAndMaxFrame(name)
-    var finished = false
-    lottie.addAnimatorListener(object : AnimatorListenerAdapter() {
-      override fun onAnimationEnd(animation: Animator) {
-        if (finished) return
-        finished = true
+    var ended = false
+    val end = { finished: Boolean ->
+      if (!ended) {
+        ended = true
+        interrupt = null
         lottie.removeAllAnimatorListeners()
-        onEnd()
+        onEnd(finished)
       }
+    }
+    interrupt = { end(false) }
+    lottie.addAnimatorListener(object : AnimatorListenerAdapter() {
+      override fun onAnimationCancel(animation: Animator) = end(false)
+      override fun onAnimationEnd(animation: Animator) = end(true)
     })
     lottie.playAnimation()
     return true
   }
 
   override fun stop() {
+    // A marker still playing ends as cut off, so its play() promise settles.
+    interrupt?.invoke()
     lottie.removeAllAnimatorListeners()
     lottie.cancelAnimation()
   }
