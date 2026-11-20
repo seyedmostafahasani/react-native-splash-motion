@@ -9,6 +9,7 @@ import android.os.HandlerThread
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.Choreographer
 import android.view.ViewGroup
 import android.view.Window
 import android.widget.FrameLayout
@@ -105,8 +106,13 @@ internal object SplashMotionController {
 
     // Runs right after onCreate(), once React Native has set its content view.
     main.post { attachOverlay(activity, config) }
-    // Safety net: never block the launch if the animation fails to load.
-    main.postDelayed({ overlayReady = true }, 1500)
+    // Safety net: never block the launch if the animation fails to load, and
+    // start the steps even if the exit listener never runs (its Activity was
+    // recreated while the system splash showed).
+    main.postDelayed({
+      overlayReady = true
+      render.post { player?.let { start(it) } }
+    }, 1500)
   }
 
   private fun attachOverlay(activity: Activity, config: SplashConfig) {
@@ -281,6 +287,17 @@ internal object SplashMotionController {
   // transparent) overlay waits for the UI thread.
   private fun dismiss(fade: Long) {
     val player = this.player ?: return flush()
+    // The fade starts once the UI thread has drawn a frame after this point:
+    // the app's last mount (queued before it on the UI thread) is then on
+    // screen, so the fade never reveals a screen still being built.
+    main.post {
+      Choreographer.getInstance().postFrameCallback {
+        main.post { render.post { fadeOut(player, fade) } }
+      }
+    }
+  }
+
+  private fun fadeOut(player: SplashPlayer, fade: Long) {
     player.fade(fade) {
       main.post {
         overlay?.let { (it.parent as? ViewGroup)?.removeView(it) }
