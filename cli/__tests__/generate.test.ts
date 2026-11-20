@@ -75,6 +75,7 @@ describe('generateIos', () => {
       background: '#0F6E56',
       loop: true,
       loopMarker: null,
+      introMarker: null,
     });
 
     const animation = readJson(
@@ -295,6 +296,7 @@ describe('generateAndroidFiles', () => {
       background: '#0F6E56',
       loop: true,
       loopMarker: null,
+      introMarker: null,
     });
     expect(
       readJson(path.join(main, 'assets', 'splashmotion', 'animation.json')).w

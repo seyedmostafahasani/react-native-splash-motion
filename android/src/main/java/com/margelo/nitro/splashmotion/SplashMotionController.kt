@@ -156,6 +156,59 @@ internal object SplashMotionController {
 
   // endregion
 
+  // region Steps
+
+  // play() and hide() steps run one after another, in call order.
+  private val steps = ArrayDeque<(done: () -> Unit) -> Unit>()
+  private var stepRunning = false
+
+  private fun enqueue(step: (done: () -> Unit) -> Unit) {
+    steps.addLast(step)
+    runNextStep()
+  }
+
+  private fun runNextStep() {
+    if (stepRunning) return
+    val step = steps.removeFirstOrNull() ?: return
+    stepRunning = true
+    step {
+      stepRunning = false
+      runNextStep()
+    }
+  }
+
+  /** Runs `body` once the current loop or marker ends (at most 5 s), or now. */
+  private fun afterCurrentLoop(waitForLoop: Boolean, player: SplashPlayer, body: () -> Unit) {
+    if (waitForLoop) {
+      main.postDelayed({ body() }, player.remainingLoopMs().coerceIn(0, 5_000))
+    } else {
+      body()
+    }
+  }
+
+  // endregion
+
+  // region Playing a marker
+
+  fun play(marker: String, waitForLoop: Boolean, loop: Boolean, done: (Boolean) -> Unit) {
+    main.post {
+      val player = this.player
+      if (hiding || player == null || !player.hasMarker(marker)) {
+        done(false)
+        return@post
+      }
+      enqueue { next ->
+        afterCurrentLoop(waitForLoop, player) {
+          player.playMarker(marker, loop) { finished -> if (!loop) done(finished) }
+          if (loop) done(true)
+          next()
+        }
+      }
+    }
+  }
+
+  // endregion
+
   // region Hiding
 
   fun hide(
@@ -175,24 +228,22 @@ internal object SplashMotionController {
       if (hiding) return@post
       hiding = true
 
-      val elapsed = SystemClock.uptimeMillis() - shownAt
-      main.postDelayed(
-        { runExit(fade, waitForLoop, outro) },
-        (minDuration - elapsed).coerceAtLeast(0),
-      )
+      // The last step: it ends with the overlay, so it never calls `next`.
+      enqueue {
+        val elapsed = SystemClock.uptimeMillis() - shownAt
+        main.postDelayed(
+          { runExit(fade, waitForLoop, outro) },
+          (minDuration - elapsed).coerceAtLeast(0),
+        )
+      }
     }
   }
 
   private fun runExit(fade: Long, waitForLoop: Boolean, outro: String?) {
     val player = this.player ?: return dismiss(fade)
-    val afterLoop = Runnable {
-      val playing = outro != null && player.playOutro(outro) { dismiss(fade) }
+    afterCurrentLoop(waitForLoop, player) {
+      val playing = outro != null && player.playMarker(outro, loop = false) { dismiss(fade) }
       if (!playing) dismiss(fade)
-    }
-    if (waitForLoop) {
-      main.postDelayed(afterLoop, player.remainingLoopMs().coerceIn(0, 5_000))
-    } else {
-      afterLoop.run()
     }
   }
 
@@ -219,6 +270,8 @@ internal object SplashMotionController {
   private fun flush() {
     val callbacks = pending.toList()
     pending.clear()
+    steps.clear()
+    stepRunning = false
     hiding = false
     callbacks.forEach { it() }
   }

@@ -55,6 +55,7 @@ namespace margelo::nitro::splashmotion {
   public:
     // Methods
     std::shared_ptr<Promise<void>> hide(const HideConfig& config) override;
+    std::shared_ptr<Promise<bool>> play(const std::string& marker, const PlayConfig& config) override;
     bool isVisible() override;
 
   private:

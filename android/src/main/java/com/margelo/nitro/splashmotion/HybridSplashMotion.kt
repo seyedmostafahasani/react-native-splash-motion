@@ -17,5 +17,15 @@ class HybridSplashMotion : HybridSplashMotionModuleSpec() {
     return promise
   }
 
+  override fun play(marker: String, config: PlayConfig): Promise<Boolean> {
+    val promise = Promise<Boolean>()
+    SplashMotionController.play(
+      marker = marker,
+      waitForLoop = config.waitForLoop ?: true,
+      loop = config.loop ?: false,
+    ) { played -> promise.resolve(played) }
+    return promise
+  }
+
   override fun isVisible(): Boolean = SplashMotionController.isVisible()
 }

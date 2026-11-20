@@ -32,10 +32,26 @@ final class LottieSplashPlayer: SplashPlayer {
     return (start, start + duration)
   }
 
+  /// The last frame of what is playing now (intro, loop or a marker).
+  private var segmentEnd: AnimationFrameTime = 0
+
   func play() {
+    if let marker = config.introMarker, range(of: marker) != nil {
+      // A cut-off intro (play() or hide() took over) does not start the loop.
+      _ = playMarker(marker, loop: false) { [weak self] finished in
+        if finished { self?.playLoop() }
+      }
+    } else {
+      playLoop()
+    }
+  }
+
+  private func playLoop() {
     if let marker = config.loopMarker, let loop = range(of: marker) {
+      segmentEnd = loop.end
       animationView.play(fromFrame: loop.start, toFrame: loop.end, loopMode: .loop)
     } else {
+      segmentEnd = animation.endFrame
       animationView.loopMode = (config.loop ?? true) ? .loop : .playOnce
       animationView.play()
     }
@@ -43,16 +59,24 @@ final class LottieSplashPlayer: SplashPlayer {
 
   func remainingLoopTime() -> TimeInterval {
     guard animationView.isAnimationPlaying else { return 0 }
-    let end = config.loopMarker.flatMap { range(of: $0)?.end } ?? animation.endFrame
-    let framesLeft = max(0, Double(end - animationView.realtimeAnimationFrame))
+    let framesLeft = max(0, Double(segmentEnd - animationView.realtimeAnimationFrame))
     let speed = max(0.01, Double(abs(animationView.animationSpeed)))
     return framesLeft / animation.framerate / speed
   }
 
-  func playOutro(_ name: String, completion: @escaping () -> Void) -> Bool {
-    guard let outro = range(of: name) else { return false }
-    animationView.play(fromFrame: outro.start, toFrame: outro.end, loopMode: .playOnce) { _ in
-      completion()
+  func hasMarker(_ name: String) -> Bool {
+    range(of: name) != nil
+  }
+
+  func playMarker(_ name: String, loop: Bool, completion: @escaping (Bool) -> Void) -> Bool {
+    guard let marker = range(of: name) else { return false }
+    segmentEnd = marker.end
+    animationView.play(
+      fromFrame: marker.start,
+      toFrame: marker.end,
+      loopMode: loop ? .loop : .playOnce
+    ) { finished in
+      completion(finished)
     }
     return true
   }

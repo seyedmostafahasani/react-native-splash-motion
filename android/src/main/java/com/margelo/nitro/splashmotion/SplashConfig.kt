@@ -10,6 +10,7 @@ internal data class SplashConfig(
   val height: Double,
   val loop: Boolean,
   val loopMarker: String?,
+  val introMarker: String?,
 ) {
   companion object {
     private fun JSONObject.optStringOrNull(key: String): String? =
@@ -24,6 +25,7 @@ internal data class SplashConfig(
         height = json.optDouble("height", 160.0),
         loop = json.optBoolean("loop", true),
         loopMarker = json.optStringOrNull("loopMarker"),
+        introMarker = json.optStringOrNull("introMarker"),
       )
     } catch (e: Exception) {
       null

@@ -14,11 +14,14 @@ namespace RNSplashMotion { class HybridSplashMotionModuleSpec_cxx; }
 
 // Forward declaration of `HideConfig` to properly resolve imports.
 namespace margelo::nitro::splashmotion { struct HideConfig; }
+// Forward declaration of `PlayConfig` to properly resolve imports.
+namespace margelo::nitro::splashmotion { struct PlayConfig; }
 
 #include <NitroModules/Promise.hpp>
 #include "HideConfig.hpp"
 #include <optional>
 #include <string>
+#include "PlayConfig.hpp"
 
 #include "RNSplashMotion-Swift-Cxx-Umbrella.hpp"
 
@@ -72,6 +75,14 @@ namespace margelo::nitro::splashmotion {
     // Methods
     inline std::shared_ptr<Promise<void>> hide(const HideConfig& config) override {
       auto __result = _swiftPart.hide(std::forward<decltype(config)>(config));
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+      auto __value = std::move(__result.value());
+      return __value;
+    }
+    inline std::shared_ptr<Promise<bool>> play(const std::string& marker, const PlayConfig& config) override {
+      auto __result = _swiftPart.play(marker, std::forward<decltype(config)>(config));
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());
       }
