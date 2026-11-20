@@ -104,7 +104,8 @@ internal class LottieSplashPlayer(context: Context) : SplashPlayer {
   }
 
   override fun stop() {
-    interrupt = null
+    // A marker still playing ends as cut off, so its play() promise settles.
+    interrupt?.invoke()
     lottie.removeAllAnimatorListeners()
     lottie.cancelAnimation()
   }

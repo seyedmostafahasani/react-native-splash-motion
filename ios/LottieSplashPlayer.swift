@@ -37,6 +37,8 @@ final class LottieSplashPlayer: SplashPlayer {
 
   /// Counts plays, so a late completion cannot act after a newer play started.
   private var playCount = 0
+  /// `playCount` of the intro: only while it is the latest play does the loop start.
+  private var introPlay = -1
 
   func play() {
     if let marker = config.introMarker, range(of: marker) != nil {
@@ -44,9 +46,10 @@ final class LottieSplashPlayer: SplashPlayer {
       // The count also covers a completion that Core Animation delivers after
       // the next marker has already started.
       _ = playMarker(marker, loop: false) { [weak self] finished in
-        guard let self, finished, self.playCount == 1 else { return }
+        guard let self, finished, self.playCount == self.introPlay else { return }
         self.playLoop()
       }
+      introPlay = playCount
     } else {
       playLoop()
     }
