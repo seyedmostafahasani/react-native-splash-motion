@@ -74,6 +74,13 @@ internal class LottieSplashPlayer(context: Context, private val render: Handler)
     Choreographer.getInstance().postFrameCallback(drawFrame)
   }
 
+  // A field: a Drawable holds its callback only through a weak reference.
+  private val drawableCallback = object : Drawable.Callback {
+    override fun invalidateDrawable(who: Drawable) = requestDraw()
+    override fun scheduleDrawable(who: Drawable, what: Runnable, `when`: Long) = Unit
+    override fun unscheduleDrawable(who: Drawable, what: Runnable) = Unit
+  }
+
   init {
     surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
       override fun surfaceCreated(holder: SurfaceHolder) = Unit
@@ -90,11 +97,7 @@ internal class LottieSplashPlayer(context: Context, private val render: Handler)
         synchronized(lock) { surface = null }
       }
     })
-    lottie.callback = object : Drawable.Callback {
-      override fun invalidateDrawable(who: Drawable) = requestDraw()
-      override fun scheduleDrawable(who: Drawable, what: Runnable, `when`: Long) = Unit
-      override fun unscheduleDrawable(who: Drawable, what: Runnable) = Unit
-    }
+    lottie.callback = drawableCallback
   }
 
   override fun load(
@@ -150,7 +153,10 @@ internal class LottieSplashPlayer(context: Context, private val render: Handler)
           canvas.save()
           canvas.translate((surfaceWidth - width) / 2, (surfaceHeight - height) / 2)
           lottie.setBounds(0, 0, width.toInt(), height.toInt())
-          lottie.alpha = (alpha * 255).toInt()
+          // setAlpha invalidates the drawable, which requests another draw:
+          // set it only when it changes.
+          val drawableAlpha = (alpha * 255).toInt()
+          if (lottie.alpha != drawableAlpha) lottie.alpha = drawableAlpha
           lottie.draw(canvas)
           canvas.restore()
         }
@@ -173,8 +179,12 @@ internal class LottieSplashPlayer(context: Context, private val render: Handler)
     lottie.repeatCount = if (config.loop) LottieDrawable.INFINITE else 0
   }
 
+  private var started = false
+
+  // Once: both the system splash exit and a late first frame can call it.
   override fun play() {
-    if (lottie.composition == null || lottie.isAnimating) return
+    if (lottie.composition == null || started) return
+    started = true
     val intro = intro() ?: return lottie.playAnimation()
     // A cut-off intro (play() or hide() took over) does not start the loop.
     playMarker(intro, loop = false) { finished ->
@@ -227,17 +237,23 @@ internal class LottieSplashPlayer(context: Context, private val render: Handler)
     // Android 10+: the compositor fades the surface, so nothing redraws. While
     // the app draws its first heavy frame, a redraw can wait 100 ms for a buffer.
     val control = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) surfaceView.surfaceControl else null
+    // One transaction for the whole fade: apply() sends and clears it.
+    val transaction = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) SurfaceControl.Transaction() else null
     val setAlpha = { value: Float ->
-      if (control != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        if (control.isValid) SurfaceControl.Transaction().setAlpha(control, value).apply()
+      if (control != null && transaction != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (control.isValid) transaction.setAlpha(control, value).apply()
       } else {
         alpha = value
         draw()
       }
     }
+    val end = {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) transaction?.close()
+      onEnd()
+    }
     if (durationMs <= 0) {
       setAlpha(0f)
-      return onEnd()
+      return end()
     }
     fade = ValueAnimator.ofFloat(1f, 0f).apply {
       duration = durationMs
@@ -245,14 +261,15 @@ internal class LottieSplashPlayer(context: Context, private val render: Handler)
         setAlpha(it.animatedValue as Float)
       }
       addListener(object : AnimatorListenerAdapter() {
-        override fun onAnimationEnd(animation: Animator) = onEnd()
+        override fun onAnimationEnd(animation: Animator) = end()
       })
       start()
     }
   }
 
   override fun stop() {
-    interrupt = null
+    // A marker still playing ends as cut off, so its play() promise settles.
+    interrupt?.invoke()
     fade?.removeAllListeners()
     fade?.cancel()
     lottie.removeAllAnimatorListeners()
