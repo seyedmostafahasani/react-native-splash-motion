@@ -9,10 +9,18 @@ export interface HideConfig {
   fade?: number;
   /** Keep the splash visible at least this long (ms since launch). Default: `0`. */
   minDuration?: number;
-  /** Let the current loop finish instead of cutting the animation mid-way. Default: `true`. */
+  /** Let the current loop (or `play()` marker) finish instead of cutting it mid-way. Default: `true`. */
   waitForLoop?: boolean;
   /** Play an outro before leaving: the name of a marker in your animation (e.g. `"outro"`). */
   outro?: string;
+}
+
+/** Options for `SplashMotion.play()`. Every field is optional. */
+export interface PlayConfig {
+  /** Let the current loop (or previous marker) finish before the marker starts. Default: `true`. */
+  waitForLoop?: boolean;
+  /** Loop the marker instead of playing it once and holding its last frame. Default: `false`. */
+  loop?: boolean;
 }
 
 export interface SplashMotionModule extends HybridObject<{
@@ -20,5 +28,6 @@ export interface SplashMotionModule extends HybridObject<{
   android: 'kotlin';
 }> {
   hide(config: HideConfig): Promise<void>;
+  play(marker: string, config: PlayConfig): Promise<boolean>;
   isVisible(): boolean;
 }

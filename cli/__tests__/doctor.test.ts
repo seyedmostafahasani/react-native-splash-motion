@@ -46,10 +46,12 @@ function writePackageJson(deps: Record<string, string> = {}) {
 function setupGeneratedProject({
   markers,
   loopMarker,
+  introMarker,
   patch = true,
 }: {
   markers?: unknown[];
   loopMarker?: string;
+  introMarker?: string;
   patch?: boolean;
 } = {}) {
   makeIosProject(root);
@@ -59,7 +61,7 @@ function setupGeneratedProject({
     root,
     makeLottie({ layers: [shapeLayer()], markers })
   );
-  const o = resolveOptions(root, { source, loopMarker });
+  const o = resolveOptions(root, { source, loopMarker, introMarker });
   generateIos(root, o);
   generateAndroidFiles(root, o);
   if (patch) patchAndroidProject(root);
@@ -115,6 +117,27 @@ describe('doctor', () => {
     );
   });
 
+  it('accepts an intro marker that exists in the animation', () => {
+    setupGeneratedProject({
+      markers: [
+        { cm: 'intro', tm: 0, dr: 30 },
+        { cm: 'loop', tm: 30, dr: 30 },
+      ],
+      loopMarker: 'loop',
+      introMarker: 'intro',
+    });
+    expect(runDoctor(root).errors).toBe(0);
+  });
+
+  it('catches an intro marker missing from the animation', () => {
+    setupGeneratedProject({ introMarker: 'nope' });
+    const report = runDoctor(root);
+    expect(report.errors).toBe(2); // iOS + Android
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('intro marker "nope" is not in the animation')
+    );
+  });
+
   it('lists available marker names to help configure hide({ outro })', () => {
     setupGeneratedProject({ markers: [{ cm: 'loop', tm: 0, dr: 30 }] });
     runDoctor(root);
@@ -122,7 +145,9 @@ describe('doctor', () => {
       expect.stringContaining('add an "outro" marker')
     );
     expect(console.log).toHaveBeenCalledWith(
-      expect.stringContaining('Marker checks cover loopMarker only')
+      expect.stringContaining(
+        'Marker checks cover loopMarker and introMarker only'
+      )
     );
   });
 

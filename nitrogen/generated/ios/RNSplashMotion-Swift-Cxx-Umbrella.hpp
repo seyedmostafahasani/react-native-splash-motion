@@ -12,10 +12,13 @@
 namespace margelo::nitro::splashmotion { struct HideConfig; }
 // Forward declaration of `HybridSplashMotionModuleSpec` to properly resolve imports.
 namespace margelo::nitro::splashmotion { class HybridSplashMotionModuleSpec; }
+// Forward declaration of `PlayConfig` to properly resolve imports.
+namespace margelo::nitro::splashmotion { struct PlayConfig; }
 
 // Include C++ defined types
 #include "HideConfig.hpp"
 #include "HybridSplashMotionModuleSpec.hpp"
+#include "PlayConfig.hpp"
 #include <NitroModules/Promise.hpp>
 #include <NitroModules/Result.hpp>
 #include <exception>

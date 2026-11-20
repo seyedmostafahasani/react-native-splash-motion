@@ -9,6 +9,8 @@ describe('CLI argument parsing', () => {
       '--force',
       '--no-loop',
       '--loop-marker',
+      'loop',
+      '--intro-marker',
       'intro',
       '--background=#0F6E56',
     ]);
@@ -16,7 +18,8 @@ describe('CLI argument parsing', () => {
     expect(flags).toMatchObject({
       force: true,
       loop: false,
-      loopMarker: 'intro',
+      loopMarker: 'loop',
+      introMarker: 'intro',
       background: '#0F6E56',
     });
   });

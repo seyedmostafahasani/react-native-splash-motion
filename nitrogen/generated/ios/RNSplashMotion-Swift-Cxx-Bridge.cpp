@@ -30,6 +30,14 @@ namespace margelo::nitro::splashmotion::bridge::swift {
     };
   }
   
+  // pragma MARK: std::function<void(bool /* result */)>
+  Func_void_bool create_Func_void_bool(void* NON_NULL swiftClosureWrapper) noexcept {
+    auto swiftClosure = RNSplashMotion::Func_void_bool::fromUnsafe(swiftClosureWrapper);
+    return [swiftClosure = std::move(swiftClosure)](bool result) mutable -> void {
+      swiftClosure.call(result);
+    };
+  }
+  
   // pragma MARK: std::shared_ptr<HybridSplashMotionModuleSpec>
   std::shared_ptr<HybridSplashMotionModuleSpec> create_std__shared_ptr_HybridSplashMotionModuleSpec_(void* NON_NULL swiftUnsafePointer) noexcept {
     RNSplashMotion::HybridSplashMotionModuleSpec_cxx swiftPart = RNSplashMotion::HybridSplashMotionModuleSpec_cxx::fromUnsafe(swiftUnsafePointer);

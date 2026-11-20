@@ -36,6 +36,10 @@ abstract class HybridSplashMotionModuleSpec: HybridObject() {
   
   @DoNotStrip
   @Keep
+  abstract fun play(marker: String, config: PlayConfig): Promise<Boolean>
+  
+  @DoNotStrip
+  @Keep
   abstract fun isVisible(): Boolean
 
   // Default implementation of `HybridObject.toString()`

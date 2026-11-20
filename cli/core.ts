@@ -18,6 +18,7 @@ export interface SplashOptions {
   still?: string;
   loop?: boolean;
   loopMarker?: string;
+  introMarker?: string;
   keepBackground?: boolean;
   force?: boolean;
 }
@@ -38,6 +39,7 @@ export interface ResolvedOptions {
   still: string | null;
   loop: boolean;
   loopMarker: string | null;
+  introMarker: string | null;
   force: boolean;
 }
 
@@ -475,6 +477,7 @@ export function resolveOptions(
     still,
     loop: options.loop !== false,
     loopMarker: options.loopMarker || null,
+    introMarker: options.introMarker || null,
     force: options.force === true,
   };
 }
@@ -487,6 +490,7 @@ function runtimeConfig(o: ResolvedOptions, file: string) {
     background: o.background.hex,
     loop: o.loop,
     loopMarker: o.loopMarker,
+    introMarker: o.introMarker,
   };
 }
 
