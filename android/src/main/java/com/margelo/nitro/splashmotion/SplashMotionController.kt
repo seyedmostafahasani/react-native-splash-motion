@@ -5,10 +5,11 @@ import android.content.Context
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
+import android.os.Process
 import android.os.SystemClock
 import android.util.Log
-import android.view.Gravity
 import android.view.ViewGroup
 import android.view.Window
 import android.widget.FrameLayout
@@ -18,22 +19,33 @@ import com.margelo.nitro.splashmotion.players.LottieSplashPlayer
 /**
  * Owns the native overlay. The system splash stays on screen until the
  * overlay's first frame is ready, so the hand-off is seamless.
+ *
+ * The splash draws, times its steps and fades on its own render thread: the
+ * UI thread is busy while React Native starts and mounts the first screen,
+ * and the splash must keep moving then. Views are added and removed on main.
  */
 internal object SplashMotionController {
   private const val TAG = "SplashMotion"
   private val main = Handler(Looper.getMainLooper())
+  // Display priority, as Android's own render threads: the splash competes with
+  // the app's startup for the CPU, and a starved thread drops frames.
+  private val render by lazy {
+    Handler(HandlerThread("SplashMotion", Process.THREAD_PRIORITY_DISPLAY).apply { start() }.looper)
+  }
 
   @Volatile private var visible = false
   @Volatile private var overlayReady = false
-  private var splashGone = false
+  @Volatile private var player: SplashPlayer? = null
+  @Volatile private var shownAt = 0L
 
   // Main-thread state
   private var installed = false
-  private var overlay: SplashOverlay? = null
-  private var player: SplashPlayer? = null
+  private var splashGone = false
+  private var overlay: FrameLayout? = null
   private var window: Window? = null
   private var windowBackground: Drawable? = null
-  private var shownAt = 0L
+
+  // Render-thread state
   private var hiding = false
   private val pending = mutableListOf<() -> Unit>()
 
@@ -92,7 +104,7 @@ internal object SplashMotionController {
     splash.setOnExitAnimationListener {
       it.remove()
       splashGone = true
-      player?.play()
+      render.post { player?.play() }
     }
 
     // Runs right after onCreate(), once React Native has set its content view.
@@ -105,7 +117,7 @@ internal object SplashMotionController {
     val bytes = preloadedBytes ?: readAnimation(activity, config) ?: return abort()
     preloadedConfig = null
     preloadedBytes = null
-    val player = LottieSplashPlayer(activity)
+    val player = LottieSplashPlayer(activity, render)
     val background = activity.getColor(R.color.splashmotion_background)
 
     // The post-splash theme's window background (black with DayNight in dark
@@ -116,13 +128,17 @@ internal object SplashMotionController {
     activity.window.setBackgroundDrawable(ColorDrawable(background))
 
     val density = activity.resources.displayMetrics.density
-    val overlay = SplashOverlay(activity, (config.width * density).toFloat(), (config.height * density).toFloat()).apply {
-      setBackgroundColor(background)
+    // Transparent: the player's surface draws the background, so its fade
+    // reveals the app without the UI thread.
+    val overlay = FrameLayout(activity).apply {
       isClickable = true // swallow touches while visible
       isFocusable = true
       translationZ = 10_000f
     }
-    overlay.addView(player.view, FrameLayout.LayoutParams(0, 0, Gravity.CENTER))
+    overlay.addView(
+      player.view,
+      FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT),
+    )
     (activity.window.decorView as ViewGroup).addView(
       overlay,
       ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
@@ -130,9 +146,12 @@ internal object SplashMotionController {
 
     this.overlay = overlay
     this.player = player
-    player.load(bytes, config) {
-      overlayReady = true
-      if (splashGone) player.play()
+    render.post {
+      player.load(bytes, config, background, density) {
+        overlayReady = true
+        // The system splash left early (the safety net): start now.
+        main.post { if (splashGone) render.post { player.play() } }
+      }
     }
   }
 
@@ -180,7 +199,7 @@ internal object SplashMotionController {
   /** Runs `body` once the current loop or marker ends (at most 5 s), or now. */
   private fun afterCurrentLoop(waitForLoop: Boolean, player: SplashPlayer, body: () -> Unit) {
     if (waitForLoop) {
-      main.postDelayed({ body() }, player.remainingLoopMs().coerceIn(0, 5_000))
+      render.postDelayed({ body() }, player.remainingLoopMs().coerceIn(0, 5_000))
     } else {
       body()
     }
@@ -191,7 +210,7 @@ internal object SplashMotionController {
   // region Playing a marker
 
   fun play(marker: String, waitForLoop: Boolean, loop: Boolean, done: (Boolean) -> Unit) {
-    main.post {
+    render.post {
       val player = this.player
       if (hiding || player == null || !player.hasMarker(marker)) {
         done(false)
@@ -218,8 +237,8 @@ internal object SplashMotionController {
     outro: String?,
     done: () -> Unit,
   ) {
-    main.post {
-      if (overlay == null) {
+    render.post {
+      if (player == null) {
         visible = false
         done()
         return@post
@@ -231,7 +250,7 @@ internal object SplashMotionController {
       // The last step: it ends with the overlay, so it never calls `next`.
       enqueue {
         val elapsed = SystemClock.uptimeMillis() - shownAt
-        main.postDelayed(
+        render.postDelayed(
           { runExit(fade, waitForLoop, outro) },
           (minDuration - elapsed).coerceAtLeast(0),
         )
@@ -247,23 +266,24 @@ internal object SplashMotionController {
     }
   }
 
+  // The fade draws on the render thread; only the removal of the (by then
+  // transparent) overlay waits for the UI thread.
   private fun dismiss(fade: Long) {
-    val overlay = this.overlay ?: return flush()
-    val finish = Runnable {
-      (overlay.parent as? ViewGroup)?.removeView(overlay)
-      window?.setBackgroundDrawable(windowBackground)
-      window = null
-      windowBackground = null
-      player?.stop()
-      player = null
-      this.overlay = null
-      visible = false
-      flush()
-    }
-    if (fade > 0) {
-      overlay.animate().alpha(0f).setDuration(fade).withEndAction(finish).start()
-    } else {
-      finish.run()
+    val player = this.player ?: return flush()
+    player.fade(fade) {
+      main.post {
+        overlay?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        overlay = null
+        window?.setBackgroundDrawable(windowBackground)
+        window = null
+        windowBackground = null
+        render.post {
+          player.stop()
+          this.player = null
+          visible = false
+          flush()
+        }
+      }
     }
   }
 
@@ -279,28 +299,3 @@ internal object SplashMotionController {
   // endregion
 }
 
-/** Keep in sync with `maxScreenFraction` (iOS) and the CLI's launch storyboard. */
-private const val MAX_SCREEN_FRACTION = 0.9f
-
-/**
- * Centers the animation at its configured size, scaled down (keeping the aspect
- * ratio) to fit 90% of the overlay. Re-measured on rotation and resize.
- */
-internal class SplashOverlay(
-  context: Context,
-  private val widthPx: Float,
-  private val heightPx: Float,
-) : FrameLayout(context) {
-  override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-    val maxWidth = MeasureSpec.getSize(widthMeasureSpec) * MAX_SCREEN_FRACTION
-    val maxHeight = MeasureSpec.getSize(heightMeasureSpec) * MAX_SCREEN_FRACTION
-    var scale = 1f
-    if (maxWidth > 0) scale = minOf(scale, maxWidth / widthPx)
-    if (maxHeight > 0) scale = minOf(scale, maxHeight / heightPx)
-    getChildAt(0)?.layoutParams?.let {
-      it.width = (widthPx * scale).toInt()
-      it.height = (heightPx * scale).toInt()
-    }
-    super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-  }
-}
