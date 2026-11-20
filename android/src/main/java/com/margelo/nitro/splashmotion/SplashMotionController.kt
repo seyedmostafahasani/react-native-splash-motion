@@ -7,7 +7,6 @@ import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
-import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import android.view.ViewGroup
@@ -27,11 +26,8 @@ import com.margelo.nitro.splashmotion.players.LottieSplashPlayer
 internal object SplashMotionController {
   private const val TAG = "SplashMotion"
   private val main = Handler(Looper.getMainLooper())
-  // Display priority, as Android's own render threads: the splash competes with
-  // the app's startup for the CPU, and a starved thread drops frames.
-  private val render by lazy {
-    Handler(HandlerThread("SplashMotion", Process.THREAD_PRIORITY_DISPLAY).apply { start() }.looper)
-  }
+  // Default priority: a higher one takes the CPU from the app's own startup.
+  private val render by lazy { Handler(HandlerThread("SplashMotion").apply { start() }.looper) }
 
   @Volatile private var visible = false
   @Volatile private var overlayReady = false

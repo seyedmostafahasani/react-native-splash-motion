@@ -12,6 +12,7 @@ import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Handler
 import android.util.Log
+import android.view.Choreographer
 import android.view.SurfaceControl
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -58,6 +59,20 @@ internal class LottieSplashPlayer(context: Context, private val render: Handler)
   private var config: SplashConfig? = null
   private var onFirstFrame: (() -> Unit)? = null
   private var fade: ValueAnimator? = null
+  // Lottie invalidates several times per frame; the surface draws once per
+  // vsync (more draws block on buffers and miss frames).
+  private var drawRequested = false
+  private val drawFrame = Choreographer.FrameCallback {
+    drawRequested = false
+    draw()
+  }
+
+  private fun requestDraw() {
+    if (drawRequested) return
+    drawRequested = true
+    // The render thread's own Choreographer.
+    Choreographer.getInstance().postFrameCallback(drawFrame)
+  }
 
   init {
     surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
@@ -76,7 +91,7 @@ internal class LottieSplashPlayer(context: Context, private val render: Handler)
       }
     })
     lottie.callback = object : Drawable.Callback {
-      override fun invalidateDrawable(who: Drawable) = draw()
+      override fun invalidateDrawable(who: Drawable) = requestDraw()
       override fun scheduleDrawable(who: Drawable, what: Runnable, `when`: Long) = Unit
       override fun unscheduleDrawable(who: Drawable, what: Runnable) = Unit
     }
@@ -114,8 +129,8 @@ internal class LottieSplashPlayer(context: Context, private val render: Handler)
     synchronized(lock) {
       val holder = surface ?: return
       if (surfaceWidth == 0 || surfaceHeight == 0) return
-      // Every invalidate draws: LottieDrawable sends the next one only after
-      // its draw() (a skipped draw stops the animation).
+      // Never skip a requested draw: LottieDrawable sends its next invalidate
+      // only after its draw() (a skipped draw stops the animation).
       val canvas = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) holder.lockHardwareCanvas() else holder.lockCanvas())
         ?: return
       try {
