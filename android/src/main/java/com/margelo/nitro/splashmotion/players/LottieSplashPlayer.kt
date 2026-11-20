@@ -58,10 +58,6 @@ internal class LottieSplashPlayer(context: Context, private val render: Handler)
   private var config: SplashConfig? = null
   private var onFirstFrame: (() -> Unit)? = null
   private var fade: ValueAnimator? = null
-  // What the surface shows now; a draw with no change is skipped (the still
-  // hold would otherwise redraw every vsync while the app starts).
-  private var drawnFrame = -1
-  private var drawnAlpha = -1f
 
   init {
     surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
@@ -71,7 +67,6 @@ internal class LottieSplashPlayer(context: Context, private val render: Handler)
           surface = holder
           surfaceWidth = width
           surfaceHeight = height
-          drawnFrame = -1
         }
         render.post { draw() }
       }
@@ -119,9 +114,8 @@ internal class LottieSplashPlayer(context: Context, private val render: Handler)
     synchronized(lock) {
       val holder = surface ?: return
       if (surfaceWidth == 0 || surfaceHeight == 0) return
-      if (lottie.frame == drawnFrame && alpha == drawnAlpha) return
-      drawnFrame = lottie.frame
-      drawnAlpha = alpha
+      // Every invalidate draws: LottieDrawable sends the next one only after
+      // its draw() (a skipped draw stops the animation).
       val canvas = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) holder.lockHardwareCanvas() else holder.lockCanvas())
         ?: return
       try {
