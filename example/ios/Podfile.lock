@@ -1766,7 +1766,7 @@ PODS:
     - React-utils (= 0.88.0)
     - ReactNativeDependencies
   - ReactNativeDependencies (0.88.0)
-  - RNSplashMotion (0.1.4):
+  - RNSplashMotion (0.1.5):
     - hermes-engine
     - lottie-ios (~> 4.5)
     - NitroModules

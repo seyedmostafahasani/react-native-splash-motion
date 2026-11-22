@@ -1,6 +1,6 @@
 {
   "name": "react-native-splash-motion",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "React Native splash screen with animated Lottie & dotLottie, rendered natively before your JS loads. Expo + bare React Native, zero native code, built on Nitro Modules.",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
