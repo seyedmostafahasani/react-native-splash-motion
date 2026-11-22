@@ -134,7 +134,10 @@ internal object SplashMotionController {
     val loaded = preloaded ?: return abort()
     preloaded = null
     val config = loaded.config
-    val player = LottieSplashPlayer(activity, loaded.composition)
+    // Application context: the views outlive an Activity recreated during the
+    // splash and must not keep the old one alive.
+    val context = activity.applicationContext
+    val player = LottieSplashPlayer(context, loaded.composition)
     val background = activity.getColor(R.color.splashmotion_background)
 
     // The post-splash theme's window background (black with DayNight in dark
@@ -145,7 +148,7 @@ internal object SplashMotionController {
     activity.window.setBackgroundDrawable(ColorDrawable(background))
 
     val density = activity.resources.displayMetrics.density
-    val overlay = SplashOverlay(activity, (config.width * density).toFloat(), (config.height * density).toFloat()).apply {
+    val overlay = SplashOverlay(context, (config.width * density).toFloat(), (config.height * density).toFloat()).apply {
       setBackgroundColor(background)
       isClickable = true // swallow touches while visible
       isFocusable = true
@@ -176,6 +179,27 @@ internal object SplashMotionController {
       overlay,
       ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
     )
+  }
+
+  /**
+   * Lets go of a destroyed Activity. If it is being recreated, the overlay
+   * waits detached for moveOverlay(); if it is finishing, the splash is over.
+   */
+  fun onDestroyed(activity: Activity) {
+    if (pendingActivity === activity) {
+      pendingActivity = null
+      if (activity.isFinishing) abort()
+      return
+    }
+    val overlay = overlay ?: return
+    if (window !== activity.window) return
+    if (activity.isFinishing) {
+      finish()
+    } else {
+      (overlay.parent as? ViewGroup)?.removeView(overlay)
+      window = null
+      windowBackground = null
+    }
   }
 
   private fun abort() {
@@ -227,22 +251,24 @@ internal object SplashMotionController {
 
   private fun dismiss(fade: Long) {
     val overlay = this.overlay ?: return flush()
-    val finish = Runnable {
-      (overlay.parent as? ViewGroup)?.removeView(overlay)
-      window?.setBackgroundDrawable(windowBackground)
-      window = null
-      windowBackground = null
-      player?.stop()
-      player = null
-      this.overlay = null
-      visible = false
-      flush()
-    }
     if (fade > 0) {
-      overlay.animate().alpha(0f).setDuration(fade).withEndAction(finish).start()
+      overlay.animate().alpha(0f).setDuration(fade).withEndAction { finish() }.start()
     } else {
-      finish.run()
+      finish()
     }
+  }
+
+  /** Removes the overlay and releases everything. Safe to call more than once. */
+  private fun finish() {
+    overlay?.let { (it.parent as? ViewGroup)?.removeView(it) }
+    window?.setBackgroundDrawable(windowBackground)
+    window = null
+    windowBackground = null
+    player?.stop()
+    player = null
+    overlay = null
+    visible = false
+    flush()
   }
 
   private fun flush() {

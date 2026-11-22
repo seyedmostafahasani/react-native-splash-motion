@@ -41,7 +41,9 @@ class SplashMotionInitProvider : ContentProvider() {
       override fun onActivityPaused(activity: Activity) {}
       override fun onActivityStopped(activity: Activity) {}
       override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
-      override fun onActivityDestroyed(activity: Activity) {}
+      override fun onActivityDestroyed(activity: Activity) {
+        if (activity is ReactActivity) SplashMotionController.onDestroyed(activity)
+      }
     })
     return true
   }
