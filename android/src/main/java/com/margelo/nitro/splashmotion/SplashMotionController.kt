@@ -13,6 +13,7 @@ import android.view.ViewGroup
 import android.view.Window
 import android.widget.FrameLayout
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import com.airbnb.lottie.LottieComposition
 import com.margelo.nitro.splashmotion.players.LottieSplashPlayer
 
 /**
@@ -39,23 +40,50 @@ internal object SplashMotionController {
 
   fun isVisible() = visible
 
-  // Read at process start by preload(), consumed by the first install().
-  private var preloadedConfig: SplashConfig? = null
-  private var preloadedBytes: ByteArray? = null
+  /** What preload() produced. `composition` is null if the animation could not be parsed. */
+  private class Preloaded(val config: SplashConfig, val composition: LottieComposition?)
+
+  // Main-thread state, filled in by the preload thread through `main`.
+  private var preloadFinished = false
+  private var preloaded: Preloaded? = null
+  // The Activity whose overlay is waiting for the preload to finish.
+  private var pendingActivity: Activity? = null
 
   // region Showing
 
   /**
    * Runs at process start (from SplashMotionInitProvider), long before the
-   * Activity exists: reads the animation and starts parsing it in the
-   * background, so its first frame is ready the moment the overlay attaches.
+   * Activity exists: reads and parses the animation on a background thread, so
+   * its first frame is ready the moment the overlay attaches.
    */
   fun preload(context: Context) {
-    val config = SplashConfig.load(context) ?: return
-    val bytes = readAnimation(context, config) ?: return
-    preloadedConfig = config
-    preloadedBytes = bytes
-    LottieSplashPlayer.preload(bytes)
+    Thread({
+      val result = try {
+        readAndParse(context)
+      } catch (e: Exception) {
+        Log.e(TAG, "Could not preload the animation.", e)
+        null
+      }
+      // Ahead of React Native's startup work already queued on the main thread.
+      main.postAtFrontOfQueue {
+        preloaded = result
+        preloadFinished = true
+        pendingActivity?.let {
+          pendingActivity = null
+          attachOverlay(it)
+        }
+      }
+    }, "SplashMotionPreload").start()
+  }
+
+  private fun readAndParse(context: Context): Preloaded? {
+    val config = SplashConfig.load(context)
+    if (config == null) {
+      Log.w(TAG, "No config found. Run `npx splash-motion generate <file>` and rebuild.")
+      return null
+    }
+    val bytes = readAnimation(context, config) ?: return null
+    return Preloaded(config, LottieSplashPlayer.parse(bytes))
   }
 
   private fun readAnimation(context: Context, config: SplashConfig): ByteArray? = try {
@@ -73,16 +101,12 @@ internal object SplashMotionController {
     if (installed) {
       // A later Activity in the same process: reopened after Back (React Native is
       // already running, so no animation) or recreated while the splash is up.
-      main.post { moveOverlay(activity) }
+      main.post {
+        if (overlay != null) moveOverlay(activity) else if (visible) attachOverlay(activity)
+      }
       return
     }
     installed = true
-
-    val config = preloadedConfig ?: SplashConfig.load(activity)
-    if (config == null) {
-      Log.w(TAG, "No config found. Run `npx splash-motion generate <file>` and rebuild.")
-      return
-    }
 
     visible = true
     shownAt = SystemClock.uptimeMillis()
@@ -96,16 +120,21 @@ internal object SplashMotionController {
     }
 
     // Runs right after onCreate(), once React Native has set its content view.
-    main.post { attachOverlay(activity, config) }
+    main.post { attachOverlay(activity) }
     // Safety net: never block the launch if the animation fails to load.
     main.postDelayed({ overlayReady = true }, 1500)
   }
 
-  private fun attachOverlay(activity: Activity, config: SplashConfig) {
-    val bytes = preloadedBytes ?: readAnimation(activity, config) ?: return abort()
-    preloadedConfig = null
-    preloadedBytes = null
-    val player = LottieSplashPlayer(activity)
+  private fun attachOverlay(activity: Activity) {
+    if (activity.isDestroyed) return
+    if (!preloadFinished) {
+      pendingActivity = activity
+      return
+    }
+    val loaded = preloaded ?: return abort()
+    preloaded = null
+    val config = loaded.config
+    val player = LottieSplashPlayer(activity, loaded.composition)
     val background = activity.getColor(R.color.splashmotion_background)
 
     // The post-splash theme's window background (black with DayNight in dark
@@ -130,7 +159,7 @@ internal object SplashMotionController {
 
     this.overlay = overlay
     this.player = player
-    player.load(bytes, config) {
+    player.load(config) {
       overlayReady = true
       if (splashGone) player.play()
     }

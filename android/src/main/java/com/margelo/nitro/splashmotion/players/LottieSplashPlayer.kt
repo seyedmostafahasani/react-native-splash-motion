@@ -7,6 +7,7 @@ import android.util.Log
 import android.view.View
 import com.airbnb.lottie.AsyncUpdates
 import com.airbnb.lottie.LottieAnimationView
+import com.airbnb.lottie.LottieComposition
 import com.airbnb.lottie.LottieCompositionFactory
 import com.airbnb.lottie.LottieDrawable
 import com.margelo.nitro.splashmotion.SplashConfig
@@ -14,7 +15,11 @@ import com.margelo.nitro.splashmotion.SplashPlayer
 import java.io.ByteArrayInputStream
 import kotlin.math.abs
 
-internal class LottieSplashPlayer(context: Context) : SplashPlayer {
+internal class LottieSplashPlayer(
+  context: Context,
+  /** From [parse]; null if the animation could not be parsed. */
+  private val composition: LottieComposition?,
+) : SplashPlayer {
   // Frames are rendered synchronously: with async updates the first frames
   // after the launch-screen still are drawn empty.
   private val lottie = LottieAnimationView(context).apply {
@@ -23,16 +28,8 @@ internal class LottieSplashPlayer(context: Context) : SplashPlayer {
 
   override val view: View get() = lottie
 
-  override fun load(bytes: ByteArray, config: SplashConfig, onReady: () -> Unit) {
-    // Synchronous on purpose: usually a cache hit thanks to preload(). The async
-    // API would deliver the result through the main thread's queue, behind
-    // React Native's startup work, leaving the overlay empty for a while.
-    val result = LottieCompositionFactory.fromJsonInputStreamSync(ByteArrayInputStream(bytes), CACHE_KEY)
-    val composition = result.value
-    if (composition == null) {
-      Log.e("SplashMotion", "Could not parse the Lottie animation.", result.exception)
-      return onReady()
-    }
+  override fun load(config: SplashConfig, onReady: () -> Unit) {
+    val composition = composition ?: return onReady()
     lottie.setComposition(composition)
     config.loopMarker?.let { marker ->
       if (composition.getMarker(marker) != null) lottie.setMinAndMaxFrame(marker)
@@ -81,11 +78,16 @@ internal class LottieSplashPlayer(context: Context) : SplashPlayer {
   }
 
   companion object {
-    private const val CACHE_KEY = "splashmotion"
-
-    /** Starts parsing in the background; load() then picks the result up from Lottie's cache. */
-    fun preload(bytes: ByteArray) {
-      LottieCompositionFactory.fromJsonInputStream(ByteArrayInputStream(bytes), CACHE_KEY)
+    /**
+     * Parses the animation; call it off the main thread. No cache key, so Lottie
+     * does not keep the composition in its process-wide cache after the splash.
+     */
+    fun parse(bytes: ByteArray): LottieComposition? {
+      val result = LottieCompositionFactory.fromJsonInputStreamSync(ByteArrayInputStream(bytes), null)
+      if (result.value == null) {
+        Log.e("SplashMotion", "Could not parse the Lottie animation.", result.exception)
+      }
+      return result.value
     }
   }
 }

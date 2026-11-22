@@ -6,7 +6,7 @@ import android.view.View
 internal interface SplashPlayer {
   val view: View
   /** Prepares the animation, showing its first frame. */
-  fun load(bytes: ByteArray, config: SplashConfig, onReady: () -> Unit)
+  fun load(config: SplashConfig, onReady: () -> Unit)
   /** Starts playing; called once the system splash is gone. */
   fun play()
   /** Milliseconds left before the current loop ends (0 if not looping). */
