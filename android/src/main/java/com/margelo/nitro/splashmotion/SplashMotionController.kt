@@ -22,6 +22,9 @@ import com.margelo.nitro.splashmotion.players.LottieSplashPlayer
  */
 internal object SplashMotionController {
   private const val TAG = "SplashMotion"
+  /** Safety net: the splash removes itself if JavaScript never calls `hide()`. */
+  private const val MAX_VISIBLE_MS = 15_000L
+  private const val TIMEOUT_FADE_MS = 220L
   private val main = Handler(Looper.getMainLooper())
 
   @Volatile private var visible = false
@@ -48,6 +51,14 @@ internal object SplashMotionController {
   private var preloaded: Preloaded? = null
   // The Activity whose overlay is waiting for the preload to finish.
   private var pendingActivity: Activity? = null
+
+  private val timeout = Runnable {
+    if (!visible || hiding) return@Runnable
+    Log.w(TAG, "hide() was not called within ${MAX_VISIBLE_MS / 1000}s. Removing the splash.")
+    if (overlay == null) return@Runnable abort()
+    hiding = true
+    dismiss(TIMEOUT_FADE_MS)
+  }
 
   // region Showing
 
@@ -123,6 +134,7 @@ internal object SplashMotionController {
     main.post { attachOverlay(activity) }
     // Safety net: never block the launch if the animation fails to load.
     main.postDelayed({ overlayReady = true }, 1500)
+    main.postDelayed(timeout, MAX_VISIBLE_MS)
   }
 
   private fun attachOverlay(activity: Activity) {
@@ -203,6 +215,7 @@ internal object SplashMotionController {
   }
 
   private fun abort() {
+    main.removeCallbacks(timeout)
     overlayReady = true
     visible = false
   }
@@ -260,6 +273,7 @@ internal object SplashMotionController {
 
   /** Removes the overlay and releases everything. Safe to call more than once. */
   private fun finish() {
+    main.removeCallbacks(timeout)
     overlay?.let { (it.parent as? ViewGroup)?.removeView(it) }
     window?.setBackgroundDrawable(windowBackground)
     window = null
