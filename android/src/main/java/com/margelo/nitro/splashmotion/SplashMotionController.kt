@@ -25,6 +25,7 @@ internal object SplashMotionController {
   private const val TAG = "SplashMotion"
   private const val MAX_VISIBLE_MS = 15_000L
   private const val TIMEOUT_FADE_MS = 220L
+  private const val PRELOAD_KEEP_MS = 10_000L
   private val main = Handler(Looper.getMainLooper())
 
   @Volatile private var visible = false
@@ -46,11 +47,16 @@ internal object SplashMotionController {
   /** What preload() produced. `composition` is null if the animation could not be parsed. */
   private class Preloaded(val config: SplashConfig, val composition: LottieComposition?)
 
-  // Main-thread state, filled in by the preload thread through `main`.
+  private var preloading = false
   private var preloadFinished = false
   private var preloaded: Preloaded? = null
-  // The Activity whose overlay is waiting for the preload to finish.
   private var pendingActivity: Activity? = null
+
+  private val dropPreload = Runnable {
+    if (installed) return@Runnable
+    preloaded = null
+    preloadFinished = false
+  }
 
   private val timeout = Runnable {
     if (!visible || hiding) return@Runnable
@@ -65,9 +71,10 @@ internal object SplashMotionController {
   /**
    * Runs at process start (from SplashMotionInitProvider), long before the
    * Activity exists: reads and parses the animation on a background thread, so
-   * its first frame is ready the moment the overlay attaches.
+   * its first frame is ready the moment the overlay attaches. Main thread only.
    */
   fun preload(context: Context) {
+    preloading = true
     Thread({
       val result = try {
         readAndParse(context)
@@ -78,7 +85,9 @@ internal object SplashMotionController {
       // Ahead of React Native's startup work already queued on the main thread.
       main.postAtFrontOfQueue {
         preloaded = result
+        preloading = false
         preloadFinished = true
+        if (!installed) main.postDelayed(dropPreload, PRELOAD_KEEP_MS)
         pendingActivity?.let {
           pendingActivity = null
           attachOverlay(it)
@@ -118,6 +127,8 @@ internal object SplashMotionController {
       return
     }
     installed = true
+    main.removeCallbacks(dropPreload)
+    if (!preloading && !preloadFinished) preload(activity.applicationContext)
 
     visible = true
     shownAt = SystemClock.uptimeMillis()
