@@ -2158,7 +2158,7 @@ SPEC CHECKSUMS:
   ReactCodegen: 7b71f4464442e9b6eae41094d11076d56c51c0e3
   ReactCommon: 145a14b942b19fc2fe38927f261955ada56978aa
   ReactNativeDependencies: d3b7423ba1e52525e42085c8470109abde583d2e
-  RNSplashMotion: 7c36eef2b473c0eb9195fa772ae5a0822268612c
+  RNSplashMotion: 40b16cfa08c19074bcfbd5ec2b7e6fd2d0d77402
   SocketRocket: 37aec555668fb852ec12e3c0de59a86ca58f0871
   Yoga: d1c536142c5ff8ec8cd856ab2a7c227a1d875c8e
 
