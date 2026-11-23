@@ -2,6 +2,7 @@ package com.margelo.nitro.splashmotion
 
 import android.app.Activity
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.os.Handler
@@ -22,7 +23,6 @@ import com.margelo.nitro.splashmotion.players.LottieSplashPlayer
  */
 internal object SplashMotionController {
   private const val TAG = "SplashMotion"
-  /** Safety net: the splash removes itself if JavaScript never calls `hide()`. */
   private const val MAX_VISIBLE_MS = 15_000L
   private const val TIMEOUT_FADE_MS = 220L
   private val main = Handler(Looper.getMainLooper())
@@ -134,7 +134,8 @@ internal object SplashMotionController {
     main.post { attachOverlay(activity) }
     // Safety net: never block the launch if the animation fails to load.
     main.postDelayed({ overlayReady = true }, 1500)
-    main.postDelayed(timeout, MAX_VISIBLE_MS)
+    val debuggable = (activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    if (!debuggable) main.postDelayed(timeout, MAX_VISIBLE_MS)
   }
 
   private fun attachOverlay(activity: Activity) {

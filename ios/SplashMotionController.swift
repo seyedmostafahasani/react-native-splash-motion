@@ -74,9 +74,11 @@ final class SplashMotionController {
     shownAt = Date()
     setVisible(true)
     player.play()
+    #if !DEBUG
     DispatchQueue.main.asyncAfter(deadline: .now() + Self.maxVisibleTime) { [weak self] in
       self?.timeOut()
     }
+    #endif
     return true
   }
 
