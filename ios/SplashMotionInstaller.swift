@@ -17,6 +17,7 @@ public final class SplashMotionInstaller: NSObject {
     // until JavaScript calls `hide()` — which never happens there.
     if NSClassFromString("EXDevLauncherController") != nil { return }
     #endif
+    SplashMotionPreload.shared.start()
     observer = NotificationCenter.default.addObserver(
       forName: UIWindow.didBecomeKeyNotification,
       object: nil,

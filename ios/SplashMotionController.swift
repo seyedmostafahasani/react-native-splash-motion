@@ -35,14 +35,9 @@ final class SplashMotionController {
     guard !attached else { return true }
     attached = true
 
-    guard let config = SplashMotionConfig.load() else {
-      NSLog("[SplashMotion] No config found. Run `npx splash-motion generate <file>` and rebuild.")
-      return true
-    }
-    guard let data = SplashMotionConfig.animationData(),
-          let player = LottieSplashPlayer(data: data, config: config) else {
-      return true
-    }
+    guard let loaded = SplashMotionPreload.shared.take() else { return true }
+    let config = loaded.config
+    let player = LottieSplashPlayer(animation: loaded.animation, config: config)
 
     let container = UIView(frame: window.bounds)
     container.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -170,5 +165,62 @@ final class SplashMotionController {
     pending.removeAll()
     hiding = false
     callbacks.forEach { $0() }
+  }
+}
+
+/// Reads and decodes the animation on a background queue at process start, so
+/// the main thread doesn't pay for it when the first window appears.
+final class SplashMotionPreload {
+  static let shared = SplashMotionPreload()
+  /// How long a preloaded animation waits for a window before it is released.
+  private static let keepTime: TimeInterval = 10
+
+  struct Loaded {
+    let config: SplashMotionConfig
+    let animation: LottieSplashPlayer.Animation
+  }
+
+  // Main-thread state. `loaded` is written on the background queue before it leaves `group`.
+  private let group = DispatchGroup()
+  private var started = false
+  private var loaded: Loaded?
+
+  func start() {
+    guard !started else { return }
+    started = true
+    group.enter()
+    // The main thread may wait on this in take(), so run at its priority.
+    DispatchQueue.global(qos: .userInteractive).async {
+      self.loaded = Self.load()
+      self.group.leave()
+    }
+    // Launched without UI (push, background fetch): don't keep the animation around.
+    DispatchQueue.main.asyncAfter(deadline: .now() + Self.keepTime) {
+      guard self.started, self.group.wait(timeout: .now()) == .success else { return }
+      self.started = false
+      self.loaded = nil
+    }
+  }
+
+  /// The preloaded result, waiting for it if it is still being decoded.
+  /// Loads on the spot if nothing was preloaded.
+  func take() -> Loaded? {
+    guard started else { return Self.load() }
+    group.wait()
+    started = false
+    defer { loaded = nil }
+    return loaded
+  }
+
+  private static func load() -> Loaded? {
+    guard let config = SplashMotionConfig.load() else {
+      NSLog("[SplashMotion] No config found. Run `npx splash-motion generate <file>` and rebuild.")
+      return nil
+    }
+    guard let data = SplashMotionConfig.animationData(),
+          let animation = LottieSplashPlayer.decode(data) else {
+      return nil
+    }
+    return Loaded(config: config, animation: animation)
   }
 }

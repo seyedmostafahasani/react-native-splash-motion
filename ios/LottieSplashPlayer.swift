@@ -6,13 +6,22 @@ final class LottieSplashPlayer: SplashPlayer {
   private let animation: LottieAnimation
   private let config: SplashMotionConfig
 
+  private var engineChecked = false
+
   var view: UIView { animationView }
 
-  init?(data: Data, config: SplashMotionConfig) {
+  typealias Animation = LottieAnimation
+
+  /// Decodes the animation. Safe to call off the main thread.
+  static func decode(_ data: Data) -> Animation? {
     guard let animation = try? JSONDecoder().decode(LottieAnimation.self, from: data) else {
       NSLog("[SplashMotion] Could not decode the Lottie animation.")
       return nil
     }
+    return animation
+  }
+
+  init(animation: Animation, config: SplashMotionConfig) {
     self.animation = animation
     self.config = config
     // The Core Animation engine renders on the system render server,
@@ -38,6 +47,21 @@ final class LottieSplashPlayer: SplashPlayer {
     } else {
       animationView.loopMode = (config.loop ?? true) ? .loop : .playOnce
       animationView.play()
+    }
+    checkEngine()
+  }
+
+  /// With `.automatic`, Lottie falls back to its main-thread engine for
+  /// animations Core Animation can't render. It decides on the first display.
+  private func checkEngine() {
+    guard !engineChecked else { return }
+    engineChecked = true
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+      guard self?.animationView.currentRenderingEngine == .mainThread else { return }
+      NSLog(
+        "[SplashMotion] This animation uses features the Core Animation engine can't render, " +
+        "so it plays on the main thread and may stutter while the app starts."
+      )
     }
   }
 
