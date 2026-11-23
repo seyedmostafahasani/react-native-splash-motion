@@ -138,7 +138,8 @@ internal object SplashMotionController {
   }
 
   private fun attachOverlay(activity: Activity) {
-    if (activity.isDestroyed) return
+    // `visible` is false once hide() or the timeout has already ended the splash.
+    if (activity.isDestroyed || !visible) return
     if (!preloadFinished) {
       pendingActivity = activity
       return
@@ -233,7 +234,8 @@ internal object SplashMotionController {
   ) {
     main.post {
       if (overlay == null) {
-        visible = false
+        pendingActivity = null
+        abort()
         done()
         return@post
       }
