@@ -10,8 +10,13 @@ internal data class SplashConfig(
   val height: Double,
   val loop: Boolean,
   val loopMarker: String?,
+  /** Milliseconds before the splash removes itself without `hide()`; 0 = never. */
+  val timeoutMs: Long,
 ) {
   companion object {
+    /** Keep in sync with `DEFAULT_TIMEOUT_MS` (CLI) and `defaultTimeout` (iOS). */
+    private const val DEFAULT_TIMEOUT_MS = 10_000L
+
     private fun JSONObject.optStringOrNull(key: String): String? =
       if (has(key) && !isNull(key)) getString(key).ifEmpty { null } else null
 
@@ -24,6 +29,7 @@ internal data class SplashConfig(
         height = json.optDouble("height", 160.0),
         loop = json.optBoolean("loop", true),
         loopMarker = json.optStringOrNull("loopMarker"),
+        timeoutMs = json.optLong("timeout", DEFAULT_TIMEOUT_MS),
       )
     } catch (e: Exception) {
       null

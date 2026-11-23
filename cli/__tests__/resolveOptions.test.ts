@@ -102,6 +102,24 @@ describe('resolveOptions — input validation', () => {
     expect(o.loop).toBe(false);
     expect(o.loopMarker).toBe('loop');
   });
+
+  it('defaults the hide timeout to 10 seconds', () => {
+    expect(generate(makeLottie()).timeout).toBe(10000);
+  });
+
+  it('accepts a custom hide timeout, as a number or a CLI string', () => {
+    expect(generate(makeLottie(), { timeout: 30000 }).timeout).toBe(30000);
+    expect(generate(makeLottie(), { timeout: '0' }).timeout).toBe(0);
+  });
+
+  it('rejects an invalid hide timeout', () => {
+    expect(() => generate(makeLottie(), { timeout: 'soon' })).toThrow(
+      /timeout must be a number/
+    );
+    expect(() => generate(makeLottie(), { timeout: -1 })).toThrow(
+      /timeout must be a number/
+    );
+  });
 });
 
 describe('resolveOptions — background color', () => {

@@ -20,6 +20,8 @@ const HELP = `
                               launch screen (iOS + Android) before the app starts
     --loop-marker <name>      Only loop this marker's range
     --no-loop                 Play once and hold the last frame
+    --timeout <ms>            Remove the splash if hide() is never called
+                              (release builds only)         (default: 10000, 0 = never)
     --keep-background         Keep a full-canvas background solid in the
                               animation (removed by default)
     --force                   Replace the iOS launch storyboard without keeping a

@@ -6,8 +6,6 @@ final class SplashMotionController {
   static let shared = SplashMotionController()
   /// Keep in sync with `MAX_SCREEN_FRACTION` (Android) and the CLI's launch storyboard.
   static let maxScreenFraction: CGFloat = 0.9
-  /// Keep in sync with `MAX_VISIBLE_MS` (Android).
-  static let maxVisibleTime: TimeInterval = 15
 
   private let lock = NSLock()
   private var _visible = false
@@ -75,17 +73,20 @@ final class SplashMotionController {
     setVisible(true)
     player.play()
     #if !DEBUG
-    DispatchQueue.main.asyncAfter(deadline: .now() + Self.maxVisibleTime) { [weak self] in
-      self?.timeOut()
+    let limit = (config.timeout ?? SplashMotionConfig.defaultTimeout) / 1000
+    if limit > 0 {
+      DispatchQueue.main.asyncAfter(deadline: .now() + limit) { [weak self] in
+        self?.timeOut(after: limit)
+      }
     }
     #endif
     return true
   }
 
   /// Safety net: the splash removes itself if JavaScript never calls `hide()`.
-  private func timeOut() {
+  private func timeOut(after limit: TimeInterval) {
     guard container != nil, !hiding else { return }
-    NSLog("[SplashMotion] hide() was not called within \(Int(Self.maxVisibleTime))s. Removing the splash.")
+    NSLog("[SplashMotion] hide() was not called within \(Int(limit))s. Removing the splash.")
     hiding = true
     dismiss(fade: 220)
   }

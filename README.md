@@ -195,6 +195,7 @@ npx splash-motion generate <animation> [options]
   --still <png>             Your animation's first frame, shown by the launch screen (iOS + Android)
   --loop-marker <name>      Only loop this marker's range
   --no-loop                 Play once and hold the last frame
+  --timeout <ms>            Remove the splash if hide() is never called (default: 10000, 0 = never)
   --keep-background         Keep a full-canvas background solid in the animation (removed by default)
   --force                   Replace the iOS launch storyboard without keeping a .bak copy
   --platforms <list>        ios,android                   (default: both)

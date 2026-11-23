@@ -8,6 +8,11 @@ struct SplashMotionConfig: Decodable {
   let background: String
   let loop: Bool?
   let loopMarker: String?
+  /// Milliseconds before the splash removes itself without `hide()`; 0 = never.
+  let timeout: Double?
+
+  /// Keep in sync with `DEFAULT_TIMEOUT_MS` (CLI and Android).
+  static let defaultTimeout: Double = 10_000
 
   static func load() -> SplashMotionConfig? {
     guard let asset = NSDataAsset(name: "SplashMotionConfig") else { return nil }

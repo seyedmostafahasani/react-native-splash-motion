@@ -15,6 +15,7 @@ const COMMAND_FLAGS: Record<'generate' | 'doctor', string[]> = {
     'still',
     'loop',
     'loopMarker',
+    'timeout',
     'keepBackground',
     'force',
     'platforms',

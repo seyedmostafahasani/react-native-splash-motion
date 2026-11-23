@@ -23,7 +23,6 @@ import com.margelo.nitro.splashmotion.players.LottieSplashPlayer
  */
 internal object SplashMotionController {
   private const val TAG = "SplashMotion"
-  private const val MAX_VISIBLE_MS = 15_000L
   private const val TIMEOUT_FADE_MS = 220L
   private const val PRELOAD_KEEP_MS = 10_000L
   private val main = Handler(Looper.getMainLooper())
@@ -41,6 +40,7 @@ internal object SplashMotionController {
   private var shownAt = 0L
   private var hiding = false
   private val pending = mutableListOf<() -> Unit>()
+  private var timeoutMs = 0L
 
   fun isVisible() = visible
 
@@ -60,7 +60,7 @@ internal object SplashMotionController {
 
   private val timeout = Runnable {
     if (!visible || hiding) return@Runnable
-    Log.w(TAG, "hide() was not called within ${MAX_VISIBLE_MS / 1000}s. Removing the splash.")
+    Log.w(TAG, "hide() was not called within ${timeoutMs / 1000}s. Removing the splash.")
     if (overlay == null) return@Runnable abort()
     hiding = true
     dismiss(TIMEOUT_FADE_MS)
@@ -145,8 +145,6 @@ internal object SplashMotionController {
     main.post { attachOverlay(activity) }
     // Safety net: never block the launch if the animation fails to load.
     main.postDelayed({ overlayReady = true }, 1500)
-    val debuggable = (activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
-    if (!debuggable) main.postDelayed(timeout, MAX_VISIBLE_MS)
   }
 
   private fun attachOverlay(activity: Activity) {
@@ -162,6 +160,7 @@ internal object SplashMotionController {
     val loaded = preloaded ?: return abort()
     preloaded = null
     val config = loaded.config
+    scheduleTimeout(activity, config.timeoutMs)
     // Application context: the views outlive an Activity recreated during the
     // splash and must not keep the old one alive.
     val context = activity.applicationContext
@@ -198,6 +197,18 @@ internal object SplashMotionController {
       overlay,
       ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
     )
+  }
+
+  /**
+   * Safety net: the splash removes itself if JavaScript never calls `hide()`.
+   * Release builds only: in development the first Metro bundle can take longer.
+   */
+  private fun scheduleTimeout(activity: Activity, timeoutMs: Long) {
+    val debuggable = (activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    if (debuggable || timeoutMs <= 0) return
+    this.timeoutMs = timeoutMs
+    val elapsed = SystemClock.uptimeMillis() - shownAt
+    main.postDelayed(timeout, (timeoutMs - elapsed).coerceAtLeast(0))
   }
 
   private fun tintWindow(activity: Activity) {

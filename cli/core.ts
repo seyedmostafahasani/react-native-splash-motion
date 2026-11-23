@@ -9,6 +9,9 @@ import zlib from 'zlib';
 
 export const LOG = '[splash-motion]';
 
+/** Keep in sync with the native defaults (SplashConfig.kt, SplashMotionConfig.swift). */
+export const DEFAULT_TIMEOUT_MS = 10000;
+
 /** Options as given on the command line or in the Expo plugin config. */
 export interface SplashOptions {
   source?: string;
@@ -18,6 +21,7 @@ export interface SplashOptions {
   still?: string;
   loop?: boolean;
   loopMarker?: string;
+  timeout?: number | string;
   keepBackground?: boolean;
   force?: boolean;
 }
@@ -38,6 +42,8 @@ export interface ResolvedOptions {
   still: string | null;
   loop: boolean;
   loopMarker: string | null;
+  /** Milliseconds before the splash removes itself without `hide()`; 0 = never. */
+  timeout: number;
   force: boolean;
 }
 
@@ -451,6 +457,13 @@ export function resolveOptions(
     throw new Error(`${LOG} width/height must be positive numbers.`);
   }
 
+  const timeout = Number(options.timeout ?? DEFAULT_TIMEOUT_MS);
+  if (!Number.isFinite(timeout) || timeout < 0) {
+    throw new Error(
+      `${LOG} timeout must be a number of milliseconds (0 disables it).`
+    );
+  }
+
   const background = parseHex(options.background ?? '#FFFFFF');
   const still = options.still ? path.resolve(projectRoot, options.still) : null;
   if (still && !fs.existsSync(still)) {
@@ -475,6 +488,7 @@ export function resolveOptions(
     still,
     loop: options.loop !== false,
     loopMarker: options.loopMarker || null,
+    timeout,
     force: options.force === true,
   };
 }
@@ -487,6 +501,7 @@ function runtimeConfig(o: ResolvedOptions, file: string) {
     background: o.background.hex,
     loop: o.loop,
     loopMarker: o.loopMarker,
+    timeout: o.timeout,
   };
 }
 
