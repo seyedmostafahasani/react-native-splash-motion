@@ -152,6 +152,9 @@ internal object SplashMotionController {
   private fun attachOverlay(activity: Activity) {
     // `visible` is false once hide() or the timeout has already ended the splash.
     if (activity.isDestroyed || !visible) return
+    // Before waiting for the preload: the system splash leaves after 1.5s at
+    // the latest, and must not reveal the app's own window background.
+    tintWindow(activity)
     if (!preloadFinished) {
       pendingActivity = activity
       return
@@ -164,13 +167,6 @@ internal object SplashMotionController {
     val context = activity.applicationContext
     val player = LottieSplashPlayer(context, loaded.composition)
     val background = activity.getColor(R.color.splashmotion_background)
-
-    // The post-splash theme's window background (black with DayNight in dark
-    // mode) would show for a frame if the system splash leaves before the
-    // overlay draws. Use the splash color until the overlay is gone.
-    windowBackground = activity.window.decorView.background
-    window = activity.window
-    activity.window.setBackgroundDrawable(ColorDrawable(background))
 
     val density = activity.resources.displayMetrics.density
     val overlay = SplashOverlay(context, (config.width * density).toFloat(), (config.height * density).toFloat()).apply {
@@ -197,13 +193,24 @@ internal object SplashMotionController {
   private fun moveOverlay(activity: Activity) {
     val overlay = overlay ?: return
     (overlay.parent as? ViewGroup)?.removeView(overlay)
-    windowBackground = activity.window.decorView.background
-    window = activity.window
-    activity.window.setBackgroundDrawable(ColorDrawable(activity.getColor(R.color.splashmotion_background)))
+    tintWindow(activity)
     (activity.window.decorView as ViewGroup).addView(
       overlay,
       ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
     )
+  }
+
+  private fun tintWindow(activity: Activity) {
+    if (window === activity.window) return
+    windowBackground = activity.window.decorView.background
+    window = activity.window
+    activity.window.setBackgroundDrawable(ColorDrawable(activity.getColor(R.color.splashmotion_background)))
+  }
+
+  private fun restoreWindow() {
+    window?.setBackgroundDrawable(windowBackground)
+    window = null
+    windowBackground = null
   }
 
   /**
@@ -211,24 +218,24 @@ internal object SplashMotionController {
    * waits detached for moveOverlay(); if it is finishing, the splash is over.
    */
   fun onDestroyed(activity: Activity) {
-    if (pendingActivity === activity) {
-      pendingActivity = null
-      if (activity.isFinishing) abort()
+    val wasPending = pendingActivity === activity
+    if (wasPending) pendingActivity = null
+    if (window !== activity.window) {
+      if (wasPending && activity.isFinishing) abort()
       return
     }
-    val overlay = overlay ?: return
-    if (window !== activity.window) return
     if (activity.isFinishing) {
-      finish()
-    } else {
-      (overlay.parent as? ViewGroup)?.removeView(overlay)
-      window = null
-      windowBackground = null
+      if (overlay != null) finish() else abort()
+      return
     }
+    overlay?.let { (it.parent as? ViewGroup)?.removeView(it) }
+    window = null
+    windowBackground = null
   }
 
   private fun abort() {
     main.removeCallbacks(timeout)
+    restoreWindow()
     overlayReady = true
     visible = false
   }
@@ -289,9 +296,7 @@ internal object SplashMotionController {
   private fun finish() {
     main.removeCallbacks(timeout)
     overlay?.let { (it.parent as? ViewGroup)?.removeView(it) }
-    window?.setBackgroundDrawable(windowBackground)
-    window = null
-    windowBackground = null
+    restoreWindow()
     player?.stop()
     player = null
     overlay = null
