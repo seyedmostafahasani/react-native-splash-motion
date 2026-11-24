@@ -9,8 +9,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
-import android.view.Gravity
 import android.view.ViewGroup
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.Window
 import android.widget.FrameLayout
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -33,7 +33,7 @@ internal object SplashMotionController {
 
   // Main-thread state
   private var installed = false
-  private var overlay: SplashOverlay? = null
+  private var overlay: FrameLayout? = null
   private var player: SplashPlayer? = null
   private var window: Window? = null
   private var windowBackground: Drawable? = null
@@ -167,14 +167,13 @@ internal object SplashMotionController {
     val player = LottieSplashPlayer(context, loaded.composition)
     val background = activity.getColor(R.color.splashmotion_background)
 
-    val density = activity.resources.displayMetrics.density
-    val overlay = SplashOverlay(context, (config.width * density).toFloat(), (config.height * density).toFloat()).apply {
+    val overlay = FrameLayout(context).apply {
       setBackgroundColor(background)
       isClickable = true // swallow touches while visible
       isFocusable = true
       translationZ = 10_000f
     }
-    overlay.addView(player.view, FrameLayout.LayoutParams(0, 0, Gravity.CENTER))
+    overlay.addView(player.view, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
     (activity.window.decorView as ViewGroup).addView(
       overlay,
       ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
@@ -182,7 +181,7 @@ internal object SplashMotionController {
 
     this.overlay = overlay
     this.player = player
-    player.load(config) {
+    player.load(config, activity.resources.displayMetrics.density) {
       overlayReady = true
       if (splashGone) player.play()
     }
@@ -296,20 +295,21 @@ internal object SplashMotionController {
 
   private fun dismiss(fade: Long) {
     val overlay = this.overlay ?: return flush()
-    if (fade > 0) {
-      overlay.animate().alpha(0f).setDuration(fade).withEndAction { finish() }.start()
-    } else {
-      finish()
-    }
+    if (fade <= 0) return finish()
+    var running = 2
+    val done = { if (--running == 0) finish() }
+    overlay.animate().alpha(0f).setDuration(fade).withEndAction(done).start()
+    player?.fade(fade, done) ?: done()
   }
 
   /** Removes the overlay and releases everything. Safe to call more than once. */
   private fun finish() {
     main.removeCallbacks(timeout)
-    overlay?.let { (it.parent as? ViewGroup)?.removeView(it) }
-    restoreWindow()
+    // Before removing its view, or the main thread can wait on a frame in progress.
     player?.stop()
     player = null
+    overlay?.let { (it.parent as? ViewGroup)?.removeView(it) }
+    restoreWindow()
     overlay = null
     visible = false
     flush()
@@ -323,30 +323,4 @@ internal object SplashMotionController {
   }
 
   // endregion
-}
-
-/** Keep in sync with `maxScreenFraction` (iOS) and the CLI's launch storyboard. */
-private const val MAX_SCREEN_FRACTION = 0.9f
-
-/**
- * Centers the animation at its configured size, scaled down (keeping the aspect
- * ratio) to fit 90% of the overlay. Re-measured on rotation and resize.
- */
-internal class SplashOverlay(
-  context: Context,
-  private val widthPx: Float,
-  private val heightPx: Float,
-) : FrameLayout(context) {
-  override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-    val maxWidth = MeasureSpec.getSize(widthMeasureSpec) * MAX_SCREEN_FRACTION
-    val maxHeight = MeasureSpec.getSize(heightMeasureSpec) * MAX_SCREEN_FRACTION
-    var scale = 1f
-    if (maxWidth > 0) scale = minOf(scale, maxWidth / widthPx)
-    if (maxHeight > 0) scale = minOf(scale, maxHeight / heightPx)
-    getChildAt(0)?.layoutParams?.let {
-      it.width = (widthPx * scale).toInt()
-      it.height = (heightPx * scale).toInt()
-    }
-    super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-  }
 }
